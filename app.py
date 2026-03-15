@@ -2446,7 +2446,7 @@ with tabs[4]:
         
         dow_query = f"""
             SELECT 
-                DAYNAME("FECHA REGISTRO") as day_of_week,
+                DAYNAME(TRY_CAST("FECHA REGISTRO" AS DATE)) as day_of_week,
                 COUNT(*) as operations,
                 SUM(COMISION) as commission_earnings,
                 AVG(COMISION) as avg_commission
