@@ -93,28 +93,53 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+import tempfile
+
 # DB path resolution (in priority order):
-# 1. DB_PATH environment variable (set this on any machine where the db is elsewhere)
-# 2. Same folder as app.py (default - works on Streamlit Cloud and when db is next to the app)
-DB_PATH = os.environ.get(
-    "DB_PATH",
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "bmc_data.db")
-)
+# 1. DB_PATH environment variable
+# 2. Same folder as app.py (default - works on Streamlit Cloud)
+# 3. File uploader (for Windows/other users who have the db elsewhere)
+_default_db = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bmc_data.db")
+DB_PATH = os.environ.get("DB_PATH", _default_db)
+
+# If the database is not found, show a file uploader
+if not os.path.exists(DB_PATH):
+    if "uploaded_db_path" not in st.session_state:
+        st.markdown("""
+            <div style='text-align: center; padding: 40px 0;'>
+                <h2>🗄️ Base de Datos No Encontrada</h2>
+                <p style='color: #666;'>El archivo <code>bmc_data.db</code> no fue encontrado automáticamente.</p>
+                <p>Por favor suba el archivo de base de datos para continuar.</p>
+            </div>
+        """, unsafe_allow_html=True)
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            uploaded_db = st.file_uploader(
+                "📂 Seleccione el archivo bmc_data.db",
+                type=["db"],
+                help="Suba el archivo de base de datos DuckDB (.db)"
+            )
+            if uploaded_db is not None:
+                tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".db")
+                tmp.write(uploaded_db.read())
+                tmp.close()
+                st.session_state["uploaded_db_path"] = tmp.name
+                st.rerun()
+            else:
+                st.info("💡 El archivo bmc_data.db puede estar en cualquier carpeta de su computador.")
+                st.stop()
+    DB_PATH = st.session_state["uploaded_db_path"]
 
 @st.cache_resource
-def get_connection():
+def get_connection(db_path):
     """Crea conexión a la base de datos con manejo de errores"""
-    if not os.path.exists(DB_PATH):
-        st.error(f"❌ Archivo de base de datos no encontrado en: {DB_PATH}")
-        st.info("💡 Por favor actualice la variable DB_PATH con la ubicación de su base de datos")
-        st.stop()
     try:
-        return duckdb.connect(DB_PATH, read_only=True)
+        return duckdb.connect(db_path, read_only=True)
     except Exception as e:
         st.error(f"❌ Error al conectar con la base de datos: {str(e)}")
         st.stop()
 
-con = get_connection()
+con = get_connection(DB_PATH)
 
 def safe_query(query, description="consulta"):
     """Ejecuta consulta SQL con manejo de errores"""
