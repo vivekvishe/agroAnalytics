@@ -150,6 +150,65 @@ def safe_query(query, description="consulta"):
         st.code(query, language="sql")
         return pd.DataFrame()
 
+def upsert_to_db(db_path, new_df):
+    """
+    Upsert (insert or update) records into operaciones_bmc.
+    Records with an existing OPERACION value are updated; new ones are inserted.
+    Returns (rows_affected, error_message).
+    """
+    # Clear the cached read-only connection so DuckDB can open a write connection
+    get_connection.clear()
+    write_con = None
+    try:
+        write_con = duckdb.connect(db_path, read_only=False)
+
+        # Discover columns that exist in the target table
+        existing_cols = write_con.execute(
+            "SELECT * FROM operaciones_bmc LIMIT 0"
+        ).df().columns.tolist()
+
+        # Keep only columns present in both the file and the table
+        valid_cols = [c for c in new_df.columns if c in existing_cols]
+        if not valid_cols:
+            return 0, "Ninguna columna del archivo coincide con la tabla. Verifique el formato."
+
+        upload_df = new_df[valid_cols].copy()
+
+        # Register the dataframe as a temporary view
+        write_con.register("_staging", upload_df)
+
+        inserted = 0
+        updated = 0
+
+        if "OPERACION" in valid_cols:
+            # Delete rows whose OPERACION already exists → will be replaced by the new data
+            existing_ops = write_con.execute(
+                "SELECT OPERACION FROM _staging WHERE OPERACION IN "
+                "(SELECT OPERACION FROM operaciones_bmc)"
+            ).fetchdf()
+            if not existing_ops.empty:
+                write_con.execute(
+                    "DELETE FROM operaciones_bmc WHERE OPERACION IN "
+                    "(SELECT OPERACION FROM _staging)"
+                )
+                updated = len(existing_ops)
+
+        col_list = ", ".join(f'"{c}"' for c in valid_cols)
+        write_con.execute(
+            f"INSERT INTO operaciones_bmc ({col_list}) "
+            f"SELECT {col_list} FROM _staging"
+        )
+        inserted = len(upload_df) - updated
+
+        write_con.unregister("_staging")
+        return len(upload_df), None
+
+    except Exception as e:
+        return 0, str(e)
+    finally:
+        if write_con:
+            write_con.close()
+
 # Panel Lateral con Filtros
 st.sidebar.header("🔍 Filtrar Análisis")
 
@@ -253,6 +312,50 @@ def build_where_clause():
     return ""
 
 filter_query = build_where_clause()
+
+# ── Sidebar: Actualizar Datos ──────────────────────────────────────────────
+st.sidebar.markdown("---")
+with st.sidebar.expander("📤 Actualizar Datos en BD", expanded=False):
+    st.markdown("Suba un archivo **CSV o Excel** con nuevas operaciones.")
+    st.caption(
+        "• Registros con `OPERACION` existente → **actualizados**\n"
+        "• Registros nuevos → **insertados**\n"
+        "• Columnas no reconocidas son ignoradas."
+    )
+
+    upsert_file = st.file_uploader(
+        "Seleccionar archivo",
+        type=["csv", "xlsx", "xls"],
+        key="upsert_file",
+        label_visibility="collapsed"
+    )
+
+    if upsert_file is not None:
+        try:
+            if upsert_file.name.lower().endswith(".csv"):
+                upload_df = pd.read_csv(upsert_file)
+            else:
+                upload_df = pd.read_excel(upsert_file)
+
+            st.success(f"📊 **{len(upload_df):,} registros** listos para cargar")
+            st.markdown(f"Columnas detectadas: `{len(upload_df.columns)}`")
+
+            with st.expander("🔍 Vista previa (5 filas)", expanded=False):
+                st.dataframe(upload_df.head(5), width="stretch")
+
+            if st.button("💾 Confirmar y Actualizar BD", type="primary", key="confirm_upsert", use_container_width=True):
+                with st.spinner("Actualizando base de datos…"):
+                    rows_affected, error = upsert_to_db(DB_PATH, upload_df)
+                if error:
+                    st.error(f"❌ Error: {error}")
+                else:
+                    st.success(f"✅ {rows_affected:,} registros procesados")
+                    st.info("🔄 Recargando tablero…")
+                    st.cache_resource.clear()
+                    st.rerun()
+
+        except Exception as e:
+            st.error(f"❌ Error al leer archivo: {str(e)}")
 
 # Título Principal
 st.title("🌾 Agro Analytics BMC - Tablero de Desempeño y Estrategia")
