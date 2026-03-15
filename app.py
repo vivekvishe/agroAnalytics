@@ -897,13 +897,13 @@ with tabs[1]:
             SELECT 
                 CLIENTE,
                 MAX("FECHA REGISTRO") as last_transaction,
-                DATE_DIFF('day', MAX("FECHA REGISTRO"), CURRENT_DATE) as days_inactive,
+                DATE_DIFF('day', MAX(TRY_CAST("FECHA REGISTRO" AS DATE)), CURRENT_DATE) as days_inactive,
                 SUM(COMISION) as lifetime_commission,
                 COUNT(*) as total_transactions
             FROM operaciones_bmc
             {filter_query}
             GROUP BY CLIENTE
-            HAVING DATE_DIFF('day', MAX("FECHA REGISTRO"), CURRENT_DATE) > 60
+            HAVING DATE_DIFF('day', MAX(TRY_CAST("FECHA REGISTRO" AS DATE)), CURRENT_DATE) > 60
             ORDER BY lifetime_commission DESC
             LIMIT 15
         """
