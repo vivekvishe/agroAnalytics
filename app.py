@@ -122,6 +122,10 @@ if not os.path.exists(DB_PATH):
         if init_file is not None:
             with st.spinner("⏳ Creando base de datos, por favor espere…"):
                 try:
+                    # Clear ALL cached resources (including any stale read-only DB connection)
+                    # so DuckDB allows opening the same file with a write connection
+                    st.cache_resource.clear()
+
                     if init_file.name.lower().endswith(".csv"):
                         # sep=None + engine='python' auto-detects delimiter (comma, semicolon, tab, etc.)
                         init_df = pd.read_csv(init_file, sep=None, engine="python", encoding_errors="replace")
