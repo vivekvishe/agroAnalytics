@@ -93,7 +93,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-DB_PATH = "/Users/vivekvishe/Documents/agro/bmc_data.db"
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bmc_data.db")
 
 @st.cache_resource
 def get_connection():

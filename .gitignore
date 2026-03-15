@@ -33,6 +33,7 @@ agro_env/
 
 # Database files
 *.db
+!bmc_data.db
 *.sqlite
 *.sqlite3
 
