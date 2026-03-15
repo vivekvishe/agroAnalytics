@@ -105,18 +105,48 @@ if not os.path.exists(DB_PATH):
     st.markdown("""
         <div style='text-align: center; padding: 40px 0;'>
             <h2>🗄️ Base de Datos No Encontrada</h2>
-            <p style='color: #666;'>No se encontró <code>bmc_data.db</code> en este equipo.</p>
-            <p>Suba su archivo de datos <strong>CSV o Excel</strong> y la base de datos se creará
-            automáticamente en su máquina.</p>
+            <p style='color: #666;'>No se encontró <code>bmc_data.db</code> en el servidor.</p>
+            <p>Restaure su base de datos guardada <strong>(.db)</strong> o cree una nueva desde un archivo <strong>CSV/Excel</strong>.</p>
         </div>
     """, unsafe_allow_html=True)
 
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
+
+        # ── Opción 1: Restaurar archivo .db descargado previamente ─────────────
+        st.markdown("### 💾 Opción 1 – Restaurar base de datos existente")
+        st.caption("Si ya tiene un archivo **bmc_data.db** descargado anteriormente, súbalo aquí para restaurar su base de datos completa.")
+
+        db_restore_file = st.file_uploader(
+            "📁 Subir bmc_data.db (sesión anterior)",
+            type=["db"],
+            key="restore_db",
+            help="Suba el archivo .db que descargó en una sesión anterior"
+        )
+
+        if db_restore_file is not None:
+            with st.spinner("⏳ Restaurando base de datos…"):
+                try:
+                    st.cache_resource.clear()
+                    with open(DB_PATH, "wb") as _f:
+                        _f.write(db_restore_file.read())
+                except Exception as e:
+                    st.error(f"❌ Error al restaurar la base de datos: {str(e)}")
+                    st.stop()
+            st.success("✅ Base de datos restaurada correctamente. Cargando tablero…")
+            st.rerun()
+
+        st.markdown("---")
+
+        # ── Opción 2: Crear desde CSV / Excel ──────────────────────────────────
+        st.markdown("### 📊 Opción 2 – Crear desde CSV o Excel")
+        st.caption("Suba su archivo de datos y la base de datos se creará automáticamente. Podrá descargarla para guardarla en su PC.")
+
         init_file = st.file_uploader(
             "📂 Seleccione su archivo de datos (CSV o Excel)",
             type=["csv", "xlsx", "xls"],
-            help="Se creará bmc_data.db a partir de este archivo en la misma carpeta que app.py"
+            key="init_csv",
+            help="Se creará bmc_data.db a partir de este archivo"
         )
 
         if init_file is not None:
@@ -143,22 +173,50 @@ if not os.path.exists(DB_PATH):
                     )
                     bootstrap_con.close()
 
-                    st.success(
-                        f"✅ Base de datos creada con **{len(init_df):,} registros** "
-                        f"y **{len(init_df.columns)} columnas**."
-                    )
-                    st.info("🔄 Cargando el tablero…")
-                    st.rerun()
+                    _created_rows = len(init_df)
+                    _created_cols = len(init_df.columns)
 
                 except Exception as e:
                     st.error(f"❌ Error al crear la base de datos: {str(e)}")
                     st.stop()
+
+            # ── DB created — offer download before loading dashboard ──────────
+            st.success(
+                f"✅ Base de datos creada con **{_created_rows:,} registros** "
+                f"y **{_created_cols} columnas**."
+            )
+
+            st.markdown("#### ⬇️ Guarde la base de datos en su PC")
+            st.info(
+                "**Importante:** Descargue este archivo y guárdelo en su computadora.\n\n"
+                "La próxima vez que abra la app, suba el archivo **.db** (Opción 1) "
+                "para restaurar su base de datos sin necesidad de re-subir el CSV."
+            )
+
+            with open(DB_PATH, "rb") as _f:
+                _db_bytes = _f.read()
+
+            st.download_button(
+                label="⬇️ Descargar bmc_data.db (recomendado)",
+                data=_db_bytes,
+                file_name="bmc_data.db",
+                mime="application/octet-stream",
+                type="primary",
+                use_container_width=True,
+                help="Guarde este archivo en su PC para restaurarlo en futuras sesiones"
+            )
+            st.caption("💡 Al hacer clic en **Descargar**, el tablero también se cargará automáticamente.")
+            # Clicking the download button triggers a Streamlit rerun.
+            # On that rerun DB_PATH exists → dashboard loads normally.
+            # st.stop() prevents the rest of the app from rendering until the user acts.
+            st.stop()
+
         else:
             st.info(
                 "💡 El archivo debe contener las columnas de operaciones del BMC "
                 "(OPERACION, CLIENTE, COMISION, VALOR NEGOCIO, etc.).\n\n"
-                "La base de datos se guardará como **bmc_data.db** junto a app.py "
-                "y se usará automáticamente en las próximas sesiones."
+                "La base de datos se guardará como **bmc_data.db** en el servidor "
+                "y estará disponible durante toda la sesión actual."
             )
             st.stop()
 
@@ -397,6 +455,30 @@ with st.sidebar.expander("📤 Actualizar Datos en BD", expanded=False):
 
         except Exception as e:
             st.error(f"❌ Error al leer archivo: {str(e)}")
+
+# ── Sidebar: Descargar Base de Datos ──────────────────────────────────────
+st.sidebar.markdown("---")
+with st.sidebar.expander("⬇️ Descargar Base de Datos", expanded=False):
+    st.markdown("Descargue el archivo **bmc_data.db** para guardarlo en su PC.")
+    st.caption(
+        "Guarde este archivo después de cada actualización de datos. "
+        "En la próxima sesión, suba el **.db** en la pantalla de inicio "
+        "para restaurar su base de datos sin re-subir el CSV."
+    )
+    try:
+        with open(DB_PATH, "rb") as _sidebar_f:
+            _sidebar_db_bytes = _sidebar_f.read()
+        st.download_button(
+            label="⬇️ Descargar bmc_data.db",
+            data=_sidebar_db_bytes,
+            file_name="bmc_data.db",
+            mime="application/octet-stream",
+            use_container_width=True,
+            key="sidebar_download_db",
+            help="Guarde este archivo en su PC para restaurarlo en futuras sesiones"
+        )
+    except Exception as _e:
+        st.error(f"❌ No se puede leer el archivo: {str(_e)}")
 
 # Título Principal
 st.title("🌾 Agro Analytics BMC - Tablero de Desempeño y Estrategia")
