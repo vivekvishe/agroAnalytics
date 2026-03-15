@@ -1,0 +1,419 @@
+================================================================================
+GUÍA DE TRADUCCIÓN - DASHBOARD BMC ANALYTICS
+================================================================================
+
+Este documento contiene todas las traducciones del inglés al español (Colombia)
+para el dashboard de análisis BMC.
+
+IMPORTANTE: 
+- Mantener términos técnicos en inglés donde sea apropiado
+- Usar español colombiano coloquial y profesional
+- Mantener todos los nombres de variables y código en inglés
+
+================================================================================
+SECCIÓN 1: AUTENTICACIÓN Y CONFIGURACIÓN
+================================================================================
+
+INGLÉS → ESPAÑOL
+-----------------
+"Agro Analytics Pro" → "Agro Analytics Pro" (mantener)
+"Secure Login Required" → "Inicio de Sesión Seguro Requerido"
+"Username" → "Usuario"
+"Password" → "Contraseña"
+"Enter username" → "Ingrese usuario"
+"Enter password" → "Ingrese contraseña"
+"Login" → "Iniciar Sesión"
+"Username or password incorrect" → "Usuario o contraseña incorrectos"
+"Logout" → "Cerrar Sesión"
+
+================================================================================
+SECCIÓN 2: NAVEGACIÓN Y MENÚS
+================================================================================
+
+TABS / PESTAÑAS:
+"Performance Dashboard" → "Panel de Desempeño"
+"Strategic Insights" → "Perspectivas Estratégicas"
+"Buyer-Seller Network" → "Red Compradores-Vendedores"
+"Client Insights" → "Análisis de Clientes"
+"Operational Analysis" → "Análisis Operacional"
+"Risk & Audit" → "Riesgo y Auditoría"
+
+FILTROS SIDEBAR:
+"Filter Analytics" → "Filtrar Analítica"
+"Select Months" → "Seleccionar Meses"
+"Select Years" → "Seleccionar Años"
+"Operation Type" → "Tipo de Operación"
+"Filter data by specific months" → "Filtrar datos por meses específicos"
+"Filter data by specific years" → "Filtrar datos por años específicos"
+
+MESES:
+"ene" → "ene" (enero)
+"feb" → "feb" (febrero)
+"mar" → "mar" (marzo)
+"abr" → "abr" (abril)
+"may" → "may" (mayo)
+"jun" → "jun" (junio)
+"jul" → "jul" (julio)
+"ago" → "ago" (agosto)
+"sep" → "sep" (septiembre)
+"oct" → "oct" (octubre)
+"nov" → "nov" (noviembre)
+"dic" → "dic" (diciembre)
+
+DÍAS DE LA SEMANA:
+"Monday" → "Lunes"
+"Tuesday" → "Martes"
+"Wednesday" → "Miércoles"
+"Thursday" → "Jueves"
+"Friday" → "Viernes"
+"Saturday" → "Sábado"
+"Sunday" → "Domingo"
+
+================================================================================
+SECCIÓN 3: MÉTRICAS Y KPIs
+================================================================================
+
+"Your Commission Earnings" → "Sus Comisiones Ganadas"
+"Client Volume" → "Volumen de Clientes"
+"Avg Commission Rate" → "Tasa Promedio de Comisión"
+"Active Clients" → "Clientes Activos"
+"Transactions" → "Transacciones"
+
+"Total commission earned" → "Total de comisiones ganadas"
+"this is YOUR company's earnings!" → "¡estas son las ganancias de SU empresa!"
+"Total value of client transactions" → "Valor total de transacciones de clientes"
+"not your commission earnings" → "no sus comisiones ganadas"
+"Average percentage you earn on each transaction" → "Porcentaje promedio que gana en cada transacción"
+"Number of clients generating commission earnings for you" → "Número de clientes generando comisiones para usted"
+"Total operations processed" → "Total de operaciones procesadas"
+
+================================================================================
+SECCIÓN 4: TÍTULOS Y ENCABEZADOS
+================================================================================
+
+"Data-Driven Insights for Agricultural Business Operations" 
+→ "Perspectivas Basadas en Datos para Operaciones de Negocios Agrícolas"
+
+"Dashboard Guide" → "Guía del Panel"
+"Dashboard Purpose" → "Propósito del Panel"
+"Navigation" → "Navegación"
+"Usage Tips" → "Consejos de Uso"
+"SQL Query Transparency" → "Transparencia de Consultas SQL"
+
+"Business Overview - Your Commission Earnings at a Glance"
+→ "Resumen del Negocio - Sus Comisiones de un Vistazo"
+
+"Commission Performance - Your Commission Earnings"
+→ "Desempeño de Comisiones - Sus Ganancias por Comisión"
+
+"Remember: Commissions are YOUR earnings - this is what your company makes!"
+→ "¡Recuerde: Las comisiones son SUS ganancias - esto es lo que gana su empresa!"
+
+================================================================================
+SECCIÓN 5: DESCRIPCIONES Y EXPLICACIONES
+================================================================================
+
+"What does this show?" → "¿Qué muestra esto?"
+"Business Question:" → "Pregunta de Negocio:"
+"What we're measuring:" → "Qué estamos midiendo:"
+"Why it matters:" → "Por qué importa:"
+"How to use it:" → "Cómo usarlo:"
+"Bottom line:" → "Conclusión:"
+"Key insight:" → "Perspectiva clave:"
+
+"View SQL Query" → "Ver Consulta SQL"
+"View All Queries" → "Ver Todas las Consultas"
+
+================================================================================
+SECCIÓN 6: VISUALIZACIONES
+================================================================================
+
+CHARTS / GRÁFICOS:
+"Monthly Commission Earnings Trend" → "Tendencia Mensual de Comisiones"
+"Top 10 Clients by Commission Earnings" → "Top 10 Clientes por Comisiones"
+"All Referenciadores" → "Todos los Referenciadores" (mantener término)
+"Your commission drivers" → "Sus generadores de comisión"
+"Product Performance" → "Desempeño de Productos"
+"Which Products Make YOU the Most Money" → "Qué Productos le Generan MÁS Dinero"
+
+NETWORK:
+"Buyer-Seller Network Analysis" → "Análisis de Red Compradores-Vendedores"
+"Hub Analysis" → "Análisis de Centros"
+"Who Connects the Most?" → "¿Quién Conecta Más?"
+"Registration Principal Analysis" → "Análisis de Principal de Registro"
+"Who Pays for Registration?" → "¿Quién Paga el Registro?"
+"Potential Client Opportunities" → "Oportunidades de Clientes Potenciales"
+"Mutual Business Relationships" → "Relaciones de Negocio Mutuas"
+"Interactive Network Visualization Map" → "Mapa Interactivo de Visualización de Red"
+
+================================================================================
+SECCIÓN 7: ANÁLISIS ESTRATÉGICO
+================================================================================
+
+"AI-Driven Business Opportunities" → "Oportunidades de Negocio Impulsadas por IA"
+"Strategic Actions:" → "Acciones Estratégicas:"
+"Churn Prevention" → "Prevención de Deserción"
+"Re-engage inactive clients" → "Reactivar clientes inactivos"
+"Cross-Selling" → "Venta Cruzada"
+"Bundle frequently paired products" → "Agrupar productos frecuentemente emparejados"
+"Growth Opportunities" → "Oportunidades de Crecimiento"
+"Target underserved segments" → "Dirigirse a segmentos desatendidos"
+
+"Churn Risk Analysis" → "Análisis de Riesgo de Deserción"
+"Protect Your Commission Earnings!" → "¡Proteja Sus Comisiones!"
+"High-value clients who haven't paid you recently (60+ days)"
+→ "Clientes de alto valor que no le han pagado recientemente (60+ días)"
+
+"Cross-Selling Opportunities" → "Oportunidades de Venta Cruzada"
+"Products frequently bought together" → "Productos frecuentemente comprados juntos"
+
+"Client Segmentation by Commission Value" → "Segmentación de Clientes por Valor de Comisión"
+"Who Pays YOU the Most" → "Quién le Paga MÁS"
+
+SEGMENTOS:
+"VIP (Top 20%)" → "VIP (Top 20%)"
+"High Value (50-80%)" → "Alto Valor (50-80%)"
+"Medium Value (20-50%)" → "Valor Medio (20-50%)"
+"Low Value (Bottom 20%)" → "Bajo Valor (Bottom 20%)"
+
+================================================================================
+SECCIÓN 8: CLIENT INSIGHTS (PERSPECTIVAS DE CLIENTES)
+================================================================================
+
+"Client Value Insights - How This Data Helps YOUR Clients"
+→ "Perspectivas de Valor del Cliente - Cómo Estos Datos Ayudan a SUS Clientes"
+
+"Why Clients Pay You Commissions"
+→ "Por Qué los Clientes le Pagan Comisiones"
+
+"Clients don't just pay for registration - they pay for INSIGHTS and VALUE!"
+→ "¡Los clientes no solo pagan por registro - pagan por PERSPECTIVAS y VALOR!"
+
+"This tab shows how the data YOU collect helps YOUR clients make better business decisions"
+→ "Esta pestaña muestra cómo los datos que USTED recopila ayudan a SUS clientes a tomar mejores decisiones de negocio"
+
+"Select a Client to Analyze" → "Seleccione un Cliente para Analizar"
+"Choose a client to see their insights:" → "Elija un cliente para ver sus perspectivas:"
+"Select a client to see how the data benefits them" → "Seleccione un cliente para ver cómo los datos los benefician"
+
+"Insights for:" → "Perspectivas para:"
+"Total Transactions" → "Total de Transacciones"
+"Business Volume" → "Volumen de Negocio"
+"Commission Paid" → "Comisión Pagada"
+"Avg Rate" → "Tasa Promedio"
+
+VALUE TABS:
+"Market Intelligence" → "Inteligencia de Mercado"
+"Performance Tracking" → "Seguimiento de Desempeño"
+"Partner Analysis" → "Análisis de Socios"
+"Cost Optimization" → "Optimización de Costos"
+
+"What you provide:" → "Qué proporciona:"
+"Client benefits:" → "Beneficios para el cliente:"
+
+"Real-time market data and benchmarking" → "Datos de mercado en tiempo real y benchmarking"
+"See industry pricing trends" → "Ver tendencias de precios de la industria"
+"Compare their rates to market averages" → "Comparar sus tarifas con promedios del mercado"
+"Identify competitive advantages" → "Identificar ventajas competitivas"
+
+"Your Product Performance vs Market" → "Su Desempeño de Productos vs Mercado"
+"Below Market" → "Por Debajo del Mercado"
+"Above Market" → "Por Encima del Mercado"
+"At Market" → "Al Nivel del Mercado"
+
+"Value Delivered:" → "Valor Entregado:"
+
+================================================================================
+SECCIÓN 9: ANÁLISIS OPERACIONAL
+================================================================================
+
+"Operational Deep-Dive" → "Análisis Operacional Profundo"
+"Daily Operation Patterns" → "Patrones de Operación Diarios"
+"Operations by Type" → "Operaciones por Tipo"
+"Geographic Distribution" → "Distribución Geográfica"
+
+"Which days of the week are busiest?" → "¿Qué días de la semana están más ocupados?"
+"Plan staffing levels for busy days" → "Planificar niveles de personal para días ocupados"
+"Schedule maintenance during slow days" → "Programar mantenimiento durante días lentos"
+"Understand weekly business rhythms" → "Entender ritmos de negocio semanales"
+
+"Top Cities - Buyers" → "Principales Ciudades - Compradores"
+"Top Cities - Sellers" → "Principales Ciudades - Vendedores"
+
+================================================================================
+SECCIÓN 10: RIESGO Y AUDITORÍA
+================================================================================
+
+"Risk & Audit Dashboard" → "Panel de Riesgo y Auditoría"
+"commission concentration Analysis (Pareto)" → "Análisis de Concentración de Comisiones (Pareto)"
+"Monitor dependency on key clients" → "Monitorear dependencia en clientes clave"
+
+"Are we too dependent on a small number of clients?"
+→ "¿Dependemos demasiado de un número pequeño de clientes?"
+
+"The famous 80/20 rule" → "La famosa regla 80/20"
+"do 20% of clients generate 80% of commission?" → "¿el 20% de clientes genera el 80% de comisiones?"
+
+"High concentration = High risk" → "Alta concentración = Alto riesgo"
+"If a few clients leave, you lose significant commission"
+→ "Si algunos clientes se van, pierde comisiones significativas"
+
+"Balanced distribution = Lower risk" → "Distribución balanceada = Menor riesgo"
+"Commission spread across many clients is healthier"
+→ "Comisiones distribuidas entre muchos clientes es más saludable"
+
+"Pricing Anomaly Detection" → "Detección de Anomalías de Precios"
+"Transactions with significantly lower commission rates"
+→ "Transacciones con tasas de comisión significativamente menores"
+
+"Transaction Size Distribution" → "Distribución de Tamaño de Transacciones"
+
+SIZE CATEGORIES:
+"Small (< $1M)" → "Pequeño (< $1M)"
+"Medium ($1M-$10M)" → "Mediano ($1M-$10M)"
+"Large ($10M-$50M)" → "Grande ($10M-$50M)"
+"Very Large (> $50M)" → "Muy Grande (> $50M)"
+
+================================================================================
+SECCIÓN 11: ACCIONES Y BOTONES
+================================================================================
+
+"Login" → "Iniciar Sesión"
+"Logout" → "Cerrar Sesión"
+"View SQL Query" → "Ver Consulta SQL"
+"Reset Zoom" → "Restablecer Zoom"
+"Show Node Labels" → "Mostrar Etiquetas de Nodos"
+
+"Relationships to display" → "Relaciones a mostrar"
+"More relationships = more detailed but cluttered map"
+→ "Más relaciones = mapa más detallado pero abarrotado"
+
+"Layout Algorithm" → "Algoritmo de Disposición"
+"Node Size Based On" → "Tamaño de Nodo Basado En"
+"Commission" → "Comisión"
+"Connections" → "Conexiones"
+
+================================================================================
+SECCIÓN 12: MENSAJES Y ALERTAS
+================================================================================
+
+SUCCESS:
+"✅ All good!" → "✅ ¡Todo bien!"
+"✅ Healthy commission distribution" → "✅ Distribución saludable de comisiones"
+"✅ No high-value clients at churn risk" → "✅ No hay clientes de alto valor en riesgo de deserción"
+
+WARNING:
+"⚠️ High commission concentration risk detected" → "⚠️ Riesgo alto de concentración de comisiones detectado"
+"⚠️ Found X transactions with unusually low commission rates"
+→ "⚠️ Se encontraron X transacciones con tasas de comisión inusualmente bajas"
+
+ERROR:
+"🚨 URGENT: X high-value clients at risk!"
+→ "🚨 URGENTE: ¡X clientes de alto valor en riesgo!"
+
+INFO:
+"💡 Create bundled offers for top product pairs"
+→ "💡 Crear ofertas agrupadas para principales pares de productos"
+
+"💡 Optimize staffing based on peak days"
+→ "💡 Optimizar personal basado en días pico"
+
+================================================================================
+SECCIÓN 13: TOOLTIPS Y AYUDA
+================================================================================
+
+"Hover over charts for detailed information"
+→ "Pase el cursor sobre gráficos para información detallada"
+
+"Click '🔍 View SQL Query' below each chart to see the underlying query"
+→ "Haga clic en '🔍 Ver Consulta SQL' debajo de cada gráfico para ver la consulta subyacente"
+
+"Export data using download buttons"
+→ "Exportar datos usando botones de descarga"
+
+"Check tooltips for metric explanations"
+→ "Revisar tooltips para explicaciones de métricas"
+
+"Use sidebar filters to focus on specific periods"
+→ "Usar filtros de barra lateral para enfocarse en períodos específicos"
+
+================================================================================
+SECCIÓN 14: BUSINESS MODEL EXPLANATION
+================================================================================
+
+"Understanding the Business Model:" → "Entendiendo el Modelo de Negocio:"
+
+"The Transaction Flow: Seller generates bill → Buyer receives goods → Your company registers the bill at BMC"
+→ "El Flujo de Transacción: Vendedor genera factura → Comprador recibe bienes → Su empresa registra la factura en BMC"
+
+"Registration Benefits: Either buyer OR seller gets tax benefits from government"
+→ "Beneficios de Registro: El comprador O vendedor obtiene beneficios fiscales del gobierno"
+
+"Your Role: You earn commission for facilitating the registration"
+→ "Su Rol: Usted gana comisión por facilitar el registro"
+
+"Principal: Whoever pays for registration (buyer or seller) is marked as 'PRINCIPAL'"
+→ "Principal: Quien paga el registro (comprador o vendedor) se marca como 'PRINCIPAL'"
+
+"Seller Pays (Vendedor)" → "Vendedor Paga"
+"Buyer Pays (Comprador)" → "Comprador Paga"
+
+================================================================================
+SECCIÓN 15: DATOS Y ESTADÍSTICAS
+================================================================================
+
+"rows returned" → "filas devueltas"
+"No data available" → "No hay datos disponibles"
+"No data found for this client" → "No se encontraron datos para este cliente"
+"No clients found in selected date range" → "No se encontraron clientes en el rango de fechas seleccionado"
+
+"Found X potential buyer clients!" → "¡Se encontraron X clientes compradores potenciales!"
+"Found X potential seller clients!" → "¡Se encontraron X clientes vendedores potenciales!"
+
+"Total Commission Opportunity" → "Oportunidad Total de Comisión"
+"Potential commission if all these buyers become clients"
+→ "Comisión potencial si todos estos compradores se vuelven clientes"
+
+================================================================================
+SECCIÓN 16: FOOTER
+================================================================================
+
+"Dashboard Summary" → "Resumen del Panel"
+"Enhanced Features:" → "Características Mejoradas:"
+"Next Steps:" → "Próximos Pasos:"
+
+"Improved error handling and data validation"
+→ "Manejo de errores y validación de datos mejorados"
+
+"Better SQL queries with proper NULL handling"
+→ "Mejores consultas SQL con manejo apropiado de NULL"
+
+"Enhanced visualizations with tooltips"
+→ "Visualizaciones mejoradas con tooltips"
+
+"Comprehensive filtering options"
+→ "Opciones comprehensivas de filtrado"
+
+"Risk management and anomaly detection"
+→ "Gestión de riesgos y detección de anomalías"
+
+"Geographic and operational insights"
+→ "Perspectivas geográficas y operacionales"
+
+"Set up automated alerts for key metrics"
+→ "Configurar alertas automatizadas para métricas clave"
+
+"Export reports for stakeholder meetings"
+→ "Exportar reportes para reuniones con partes interesadas"
+
+"Schedule regular dashboard reviews"
+→ "Programar revisiones regulares del panel"
+
+"Integrate with CRM for client management"
+→ "Integrar con CRM para gestión de clientes"
+
+"Last updated:" → "Última actualización:"
+
+================================================================================
+FIN DE LA GUÍA DE TRADUCCIÓN
+================================================================================

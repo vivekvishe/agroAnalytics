@@ -13,7 +13,7 @@ try:
 except ImportError:
     NETWORKX_AVAILABLE = False
 
-# Page Configuration
+# Configuración de Página
 st.set_page_config(
     page_title="Agro Analytics Pro", 
     layout="wide",
@@ -21,69 +21,64 @@ st.set_page_config(
 )
 
 # ============================================
-# SECURE LOGIN AUTHENTICATION
+# AUTENTICACIÓN SEGURA DE INICIO DE SESIÓN
 # ============================================
 
-# SECURITY NOTE: Password is stored as SHA-256 hash, not plain text
-# The actual password is: 
-# To generate hash for a new password, run in Python:
+# NOTA DE SEGURIDAD: La contraseña se almacena como hash SHA-256, no en texto plano
+
+# Para generar el hash de una nueva contraseña, ejecute en Python:
 #   import hashlib
-#   hashlib.sha256("YourNewPassword".encode()).hexdigest()
+#   hashlib.sha256("SuNuevaContraseña".encode()).hexdigest()
 
 ADMIN_USERNAME = "admin"
 PASSWORD_HASH = "e0bd631724a4fb17f0fc7c19ac460ef1838cdf4c4d0a922e63c09d92b90922d8"
 
 def hash_password(password):
-    """Hash a password using SHA-256"""
+    """Genera hash SHA-256 de una contraseña"""
     return hashlib.sha256(password.encode()).hexdigest()
 
 def check_password():
-    """Returns `True` if the user had the correct password."""
+    """Retorna `True` si el usuario ingresó la contraseña correcta."""
     
     def password_entered():
-        """Checks whether a password entered by the user is correct."""
-        # Compare hashed passwords instead of plain text
+        """Verifica si la contraseña ingresada es correcta."""
         if (st.session_state["username"] == ADMIN_USERNAME and 
             hash_password(st.session_state["password"]) == PASSWORD_HASH):
             st.session_state["password_correct"] = True
-            del st.session_state["password"]  # Don't store password
-            del st.session_state["username"]  # Don't store username
+            del st.session_state["password"]
+            del st.session_state["username"]
         else:
             st.session_state["password_correct"] = False
 
-    # Return True if the password is validated
     if st.session_state.get("password_correct", False):
         return True
 
-    # Show login form
     st.markdown("""
         <div style='text-align: center; padding: 50px 0;'>
             <h1>🌾 Agro Analytics BMC</h1>
-            <h3>Secure Login Required</h3>
+            <h3>Inicio de Sesión Requerido</h3>
         </div>
     """, unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns([1, 2, 1])
     
     with col2:
-        st.text_input("Username", key="username", placeholder="Enter username")
-        st.text_input("Password", type="password", key="password", placeholder="Enter password")
-        st.button("Login", on_click=password_entered, type="primary", use_container_width=True)
+        st.text_input("Usuario", key="username", placeholder="Ingrese su usuario")
+        st.text_input("Contraseña", type="password", key="password", placeholder="Ingrese su contraseña")
+        st.button("Ingresar", on_click=password_entered, type="primary", use_container_width=True)
         
         if "password_correct" in st.session_state and not st.session_state["password_correct"]:
-            st.error("😕 Username or password incorrect")
+            st.error("😕 Usuario o contraseña incorrectos")
     
     return False
 
-# Check authentication before showing dashboard
 if not check_password():
-    st.stop()  # Don't continue if not authenticated
+    st.stop()
 
 # ============================================
-# MAIN DASHBOARD (only shown after login)
+# TABLERO PRINCIPAL (solo visible después del inicio de sesión)
 # ============================================
 
-# Custom CSS for better styling
 st.markdown("""
 <style>
     .reportview-container {
@@ -98,45 +93,41 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# 1. Database Connection with Error Handling
 DB_PATH = "/Users/vivekvishe/Documents/agro/bmc_data.db"
 
 @st.cache_resource
 def get_connection():
-    """Create database connection with error handling"""
+    """Crea conexión a la base de datos con manejo de errores"""
     if not os.path.exists(DB_PATH):
-        st.error(f"❌ Database file not found at: {DB_PATH}")
-        st.info("💡 Please update the DB_PATH variable with your database location")
+        st.error(f"❌ Archivo de base de datos no encontrado en: {DB_PATH}")
+        st.info("💡 Por favor actualice la variable DB_PATH con la ubicación de su base de datos")
         st.stop()
     try:
         return duckdb.connect(DB_PATH, read_only=True)
     except Exception as e:
-        st.error(f"❌ Error connecting to database: {str(e)}")
+        st.error(f"❌ Error al conectar con la base de datos: {str(e)}")
         st.stop()
 
 con = get_connection()
 
-# Helper function to execute queries safely
-def safe_query(query, description="query"):
-    """Execute SQL query with error handling"""
+def safe_query(query, description="consulta"):
+    """Ejecuta consulta SQL con manejo de errores"""
     try:
         return con.execute(query).df()
     except Exception as e:
-        st.error(f"❌ Error executing {description}: {str(e)}")
+        st.error(f"❌ Error ejecutando {description}: {str(e)}")
         st.code(query, language="sql")
         return pd.DataFrame()
 
-# 2. Sidebar Filters with Improved Logic
-st.sidebar.header("🔍 Filter Analytics")
+# Panel Lateral con Filtros
+st.sidebar.header("🔍 Filtrar Análisis")
 
-# Logout button
-if st.sidebar.button("🚪 Logout", type="secondary", use_container_width=True):
+if st.sidebar.button("🚪 Cerrar Sesión", type="secondary", use_container_width=True):
     st.session_state["password_correct"] = False
     st.rerun()
 
 st.sidebar.markdown("---")
 
-# Month filter with better ordering
 try:
     months_query = """
         SELECT DISTINCT MES 
@@ -159,50 +150,48 @@ try:
                 ELSE 0
             END
     """
-    months_df = safe_query(months_query, "months filter")
+    months_df = safe_query(months_query, "filtro de meses")
     
     if not months_df.empty:
         months = months_df['MES'].tolist()
         selected_months = st.sidebar.multiselect(
-            "📅 Select Months", 
+            "📅 Seleccionar Meses", 
             options=months, 
             default=months,
-            help="Filter data by specific months"
+            help="Filtrar datos por meses específicos"
         )
     else:
         selected_months = []
-        st.sidebar.warning("No month data available")
+        st.sidebar.warning("No hay datos de meses disponibles")
 except Exception as e:
-    st.sidebar.error(f"Error loading months: {str(e)}")
+    st.sidebar.error(f"Error al cargar meses: {str(e)}")
     selected_months = []
 
-# Year filter
 try:
     years_query = "SELECT DISTINCT YEAR FROM operaciones_bmc WHERE YEAR IS NOT NULL ORDER BY YEAR DESC"
-    years_df = safe_query(years_query, "years filter")
+    years_df = safe_query(years_query, "filtro de años")
     
     if not years_df.empty:
         years = years_df['YEAR'].tolist()
         selected_years = st.sidebar.multiselect(
-            "📆 Select Years",
+            "📆 Seleccionar Años",
             options=years,
             default=years,
-            help="Filter data by specific years"
+            help="Filtrar datos por años específicos"
         )
     else:
         selected_years = []
 except Exception as e:
     selected_years = []
 
-# Operation type filter
 try:
     op_types_query = "SELECT DISTINCT \"TIPO OPERACION\" FROM operaciones_bmc WHERE \"TIPO OPERACION\" IS NOT NULL"
-    op_types_df = safe_query(op_types_query, "operation types")
+    op_types_df = safe_query(op_types_query, "tipos de operación")
     
     if not op_types_df.empty:
         op_types = op_types_df['TIPO OPERACION'].tolist()
         selected_op_types = st.sidebar.multiselect(
-            "📋 Operation Type",
+            "📋 Tipo de Operación",
             options=op_types,
             default=op_types,
             help="RSG: Sin incentivo, REX: Exportación, RGC: Con incentivo"
@@ -212,9 +201,8 @@ try:
 except Exception as e:
     selected_op_types = []
 
-# Build WHERE clause
 def build_where_clause():
-    """Build WHERE clause based on selected filters"""
+    """Construye la cláusula WHERE según los filtros seleccionados"""
     conditions = []
     
     if selected_months:
@@ -235,50 +223,47 @@ def build_where_clause():
 
 filter_query = build_where_clause()
 
-# Title and Logo
-st.title("🌾 Agro Analytics BMC - Performance & Strategy Dashboard")
-st.markdown("### Data-Driven Insights for Agricultural Business Operations")
+# Título Principal
+st.title("🌾 Agro Analytics BMC - Tablero de Desempeño y Estrategia")
+st.markdown("### Análisis Basado en Datos para Operaciones del Negocio Agrícola")
 
-# Dashboard Overview
-with st.expander("📋 **Dashboard Guide**", expanded=False):
+with st.expander("📋 **Guía del Tablero**", expanded=False):
     st.markdown("""
-    ### 🎯 **Dashboard Purpose**
-    Monitor agricultural business operations with comprehensive analytics:
-    - **Performance Metrics**: Commission, volume, and operational efficiency
-    - **Strategic Insights**: AI-powered business opportunities and risks
-    - **Operational Analysis**: Daily patterns and resource optimization
-    - **Risk Management**: Financial exposure and compliance monitoring
+    ### 🎯 **Propósito del Tablero**
+    Monitorear operaciones del negocio agrícola con análisis integrales:
+    - **Métricas de Desempeño**: Comisión, volumen y eficiencia operativa
+    - **Perspectivas Estratégicas**: Oportunidades de negocio impulsadas por IA y riesgos
+    - **Análisis Operativo**: Patrones diarios y optimización de recursos
+    - **Gestión de Riesgos**: Exposición financiera y monitoreo de cumplimiento
     
-    ### 🔍 **Navigation**
-    1. **📊 Performance Dashboard**: KPIs and commission trends
-    2. **💡 Strategic Insights**: Growth opportunities and risk detection
-    3. **🔗 Buyer-Seller Network**: Network analysis and potential clients
-    4. **👥 Client Insights**: Client value demonstration
-    5. **🔍 Operational Deep-Dive**: Daily operations and efficiency
-    6. **🛡️ Risk & Audit**: Concentration risk and anomaly detection
+    ### 🔍 **Navegación**
+    1. **📊 Tablero de Desempeño**: KPIs y tendencias de comisión
+    2. **💡 Perspectivas Estratégicas**: Oportunidades de crecimiento y detección de riesgos
+    3. **🔗 Red Compradores-Vendedores**: Análisis de red y clientes potenciales
+    4. **👥 Perspectivas del Cliente**: Demostración de valor al cliente
+    5. **🔍 Análisis Operativo**: Operaciones diarias y eficiencia
+    6. **🛡️ Riesgo y Auditoría**: Riesgo de concentración y detección de anomalías
     
-    ### 💡 **Usage Tips**
-    - Use sidebar filters to focus on specific periods
-    - Hover over charts for detailed information
-    - **Click "🔍 View SQL Query" below each chart** to see the underlying query
-    - Export data using download buttons
-    - Check tooltips for metric explanations
+    ### 💡 **Consejos de Uso**
+    - Use los filtros del panel lateral para enfocarse en períodos específicos
+    - Pase el cursor sobre los gráficos para información detallada
+    - **Haga clic en "🔍 Ver Consulta SQL" debajo de cada gráfico** para ver la consulta subyacente
+    - Exporte datos usando los botones de descarga
+    - Revise los tooltips para explicaciones de métricas
     
-    ### 🔍 **SQL Query Transparency**
-    Every chart and table has a collapsible "🔍 View SQL Query" section that shows:
-    - The exact SQL query used to generate the data
-    - How filters are applied
-    - What calculations are performed
-    - Complete transparency into our analytics
+    ### 🔍 **Transparencia en Consultas SQL**
+    Cada gráfico y tabla tiene una sección desplegable "🔍 Ver Consulta SQL" que muestra:
+    - La consulta SQL exacta usada para generar los datos
+    - Cómo se aplican los filtros
+    - Qué cálculos se realizan
+    - Transparencia total en nuestros análisis
     """)
 
-# Quick Stats Overview
 st.markdown("---")
-st.subheader("🚀 Business Overview - Your Commission Earnings at a Glance")
+st.subheader("🚀 Resumen del Negocio - Sus Comisiones de un Vistazo")
 
 col1, col2, col3, col4, col5 = st.columns(5)
 
-# Get overview metrics
 overview_query = f"""
     SELECT 
         COUNT(DISTINCT CLIENTE) as unique_clients,
@@ -291,84 +276,83 @@ overview_query = f"""
     {filter_query}
 """
 
-with st.expander("🔍 View Overview SQL Query", expanded=False):
+with st.expander("🔍 Ver Consulta SQL del Resumen", expanded=False):
     st.code(overview_query, language="sql")
 
-overview_data = safe_query(overview_query, "overview metrics")
+overview_data = safe_query(overview_query, "métricas de resumen")
 
 if not overview_data.empty:
     with col1:
         st.metric(
-            "💰 Your Commission Earnings", 
+            "💰 Sus Comisiones Ganadas", 
             f"${overview_data['total_commission'][0]:,.0f}",
-            help="Total commission earned - this is YOUR company's earnings!"
+            help="Total de comisiones ganadas - ¡estas son las ganancias de SU empresa!"
         )
     with col2:
         st.metric(
-            "📊 Client Volume", 
+            "📊 Volumen de Clientes", 
             f"${overview_data['total_volume'][0]:,.0f}",
-            help="Total value of client transactions (not your commission earnings)"
+            help="Valor total de transacciones de clientes (no sus comisiones)"
         )
     with col3:
         st.metric(
-            "📈 Avg Commission Rate", 
+            "📈 Tasa Promedio de Comisión", 
             f"{overview_data['avg_commission_rate'][0]:.2f}%",
-            help="Average percentage you earn on each transaction"
+            help="Porcentaje promedio que gana en cada transacción"
         )
     with col4:
         st.metric(
-            "👥 Active Clients", 
+            "👥 Clientes Activos", 
             f"{int(overview_data['unique_clients'][0]):,}",
-            help="Number of clients generating commission earnings for you"
+            help="Número de clientes generando comisiones para usted"
         )
     with col5:
         st.metric(
-            "✅ Transactions", 
+            "✅ Transacciones", 
             f"{int(overview_data['total_ops'][0]):,}",
-            help="Total operations processed"
+            help="Total de operaciones procesadas"
         )
 
-# Define Tabs
+# Definir Pestañas
 tabs = st.tabs([
-    "📊 Performance Dashboard", 
-    "💡 Strategic Insights",
-    "🔗 Buyer-Seller Network",
-    "👥 Client Insights",
-    "🔍 Operational Analysis",
-    "🛡️ Risk & Audit"
+    "📊 Tablero de Desempeño", 
+    "💡 Perspectivas Estratégicas",
+    "🔗 Red Compradores-Vendedores",
+    "👥 Perspectivas del Cliente",
+    "🔍 Análisis Operativo",
+    "🛡️ Riesgo y Auditoría"
 ])
 
-# --- TAB 1: PERFORMANCE DASHBOARD ---
+# --- PESTAÑA 1: TABLERO DE DESEMPEÑO ---
 with tabs[0]:
-    st.markdown("### 💰 Commission Performance - Your Commission Earnings")
-    st.info("💡 **Remember:** Commissions are YOUR earnings - this is what your company makes!")
+    st.markdown("### 💰 Desempeño de Comisiones - Sus Ganancias")
+    st.info("💡 **Recuerde:** Las comisiones son SUS ganancias - ¡esto es lo que genera su empresa!")
     
-    # Monthly trend
     col_left, col_right = st.columns(2)
     
     with col_left:
-        st.subheader("📊 Monthly Commission Earnings Trend")
+        st.subheader("📊 Tendencia Mensual de Comisiones")
         
-        with st.expander("ℹ️ What does this show?", expanded=False):
+        with st.expander("ℹ️ ¿Qué muestra esto?", expanded=False):
             st.markdown("""
-            **Business Question:** How much commission is YOUR company earning each month?
+            **Pregunta de Negocio:** ¿Cuánta comisión está ganando SU empresa cada mes?
             
-            **What we're measuring:**
-            - **Total commission earned each month** = Your actual income/earnings
-            - Total business volume processed (client transactions - NOT your commission earnings)
-            - Number of transactions per month
+            **Qué estamos midiendo:**
+            - **Total de comisión ganada cada mes** = Sus ingresos/ganancias reales
+            - Volumen de negocio total procesado (transacciones de clientes - NO sus comisiones)
+            - Número de transacciones por mes
             
-            **Why it matters:** This is YOUR bottom line!
-            - Identify your best and worst earning months
-            - Track growth trends - are you making more commission over time?
-            - Spot seasonal patterns to plan cash flow
+            **Por qué importa:** ¡Esta es SU línea de fondo!
+            - Identifique sus mejores y peores meses de ganancias
+            - Siga tendencias de crecimiento - ¿está ganando más comisión con el tiempo?
+            - Detecte patrones estacionales para planificar flujo de caja
             
-            **How to use it:** 
-            - Compare current month to previous - are commissions growing?
-            - Investigate dips - why did commission earnings drop?
-            - Plan expenses based on expected commission income
+            **Cómo usarlo:** 
+            - Compare el mes actual con el anterior - ¿están creciendo las comisiones?
+            - Investigue caídas - ¿por qué bajaron las comisiones?
+            - Planifique gastos basándose en ingresos esperados de comisión
             
-            **Important:** The commission line shows YOUR company's actual earnings, not client transaction values.
+            **Importante:** La línea de comisión muestra las ganancias reales de SU empresa, no los valores de transacciones de clientes.
             """)
         
         monthly_query = f"""
@@ -398,10 +382,10 @@ with tabs[0]:
                 END
         """
         
-        with st.expander("🔍 View SQL Query", expanded=False):
+        with st.expander("🔍 Ver Consulta SQL", expanded=False):
             st.code(monthly_query, language="sql")
         
-        monthly_df = safe_query(monthly_query, "monthly trend")
+        monthly_df = safe_query(monthly_query, "tendencia mensual")
         
         if not monthly_df.empty:
             fig_monthly = go.Figure()
@@ -409,47 +393,47 @@ with tabs[0]:
                 x=monthly_df['MES'],
                 y=monthly_df['commission_earnings'],
                 mode='lines+markers',
-                name='Your Commission Earnings',
+                name='Sus Comisiones Ganadas',
                 line=dict(color='#27AE60', width=4),
                 marker=dict(size=10, color='#27AE60'),
-                hovertemplate='<b>%{x}</b><br>💰 Your Earnings: $%{y:,.0f}<extra></extra>'
+                hovertemplate='<b>%{x}</b><br>💰 Sus Ganancias: $%{y:,.0f}<extra></extra>'
             ))
             fig_monthly.update_layout(
-                title="Your Monthly Commission Earnings",
-                xaxis_title="Month",
-                yaxis_title="Commission Earnings ($) - YOUR INCOME",
+                title="Sus Comisiones Ganadas por Mes",
+                xaxis_title="Mes",
+                yaxis_title="Comisiones Ganadas ($) - SUS INGRESOS",
                 hovermode='x unified',
                 plot_bgcolor='rgba(39,174,96,0.1)'
             )
-            st.plotly_chart(fig_monthly, use_container_width=True)
-            st.caption("💰 This shows YOUR company's actual earnings from commissions")
+            st.plotly_chart(fig_monthly, width="stretch")
+            st.caption("💰 Esto muestra las ganancias reales de SU empresa por comisiones")
         else:
-            st.info("No data available for monthly trend")
+            st.info("No hay datos disponibles para la tendencia mensual")
     
     with col_right:
-        st.subheader("🏆 Top 10 Clients by Commission Earnings")
+        st.subheader("🏆 Top 10 Clientes por Comisiones Generadas")
         
-        with st.expander("ℹ️ What does this show?", expanded=False):
+        with st.expander("ℹ️ ¿Qué muestra esto?", expanded=False):
             st.markdown("""
-            **Business Question:** Which clients are generating the most commission for YOU?
+            **Pregunta de Negocio:** ¿Qué clientes están generando más comisión para USTED?
             
-            **What we're measuring:**
-            - **Total commission generated by each client** = How much each client pays YOU
-            - Number of transactions per client
-            - Total transaction volume (their business, not your earnings)
+            **Qué estamos midiendo:**
+            - **Comisión total generada por cada cliente** = Cuánto le paga cada cliente
+            - Número de transacciones por cliente
+            - Volumen total de transacciones
             
-            **Why it matters:**
-            - These are YOUR cash cows - the clients who pay your bills!
-            - They deserve VIP treatment to keep them happy
-            - Losing one of these clients would hurt your commission earnings significantly
+            **Por qué importa:**
+            - ¡Estas son SUS vacas lecheras - los clientes que pagan sus cuentas!
+            - Merecen tratamiento VIP para mantenerlos contentos
+            - Perder uno de estos clientes afectaría significativamente sus comisiones
             
-            **How to use it:** 
-            - Call these clients regularly to maintain relationships
-            - Give them priority service and special attention
-            - Offer them incentives to do MORE business with you
-            - If any appear on the "Churn Risk" list - URGENT action needed!
+            **Cómo usarlo:** 
+            - Llame a estos clientes regularmente para mantener las relaciones
+            - Déles servicio prioritario y atención especial
+            - Ofrézcales incentivos para hacer MÁS negocio con usted
+            - Si alguno aparece en la lista de "Riesgo de Fuga" - ¡se necesita acción URGENTE!
             
-            **Bottom line:** These clients = Your biggest paychecks. Keep them happy!
+            **Conclusión:** Estos clientes = Sus mayores cheques de pago. ¡Manténgalos contentos!
             """)
         
         clients_query = f"""
@@ -466,10 +450,10 @@ with tabs[0]:
             LIMIT 10
         """
         
-        with st.expander("🔍 View SQL Query", expanded=False):
+        with st.expander("🔍 Ver Consulta SQL", expanded=False):
             st.code(clients_query, language="sql")
         
-        clients_df = safe_query(clients_query, "top clients")
+        clients_df = safe_query(clients_query, "top clientes")
         
         if not clients_df.empty:
             fig_clients = px.bar(
@@ -477,46 +461,46 @@ with tabs[0]:
                 x='commission_earnings',
                 y='CLIENTE',
                 orientation='h',
-                title="Top Commission Generators - YOUR Biggest Earners",
-                labels={'commission_earnings': 'Commission Earnings ($) - YOUR INCOME', 'CLIENTE': 'Client'},
+                title="Mayores Generadores de Comisión - Sus Mejores Clientes",
+                labels={'commission_earnings': 'Comisiones Ganadas ($) - SUS INGRESOS', 'CLIENTE': 'Cliente'},
                 color='commission_earnings',
                 color_continuous_scale='Greens'
             )
             fig_clients.update_traces(
-                hovertemplate='<b>%{y}</b><br>💰 Pays YOU: $%{x:,.0f}<br>Transactions: %{customdata[0]}<br>Avg Rate: %{customdata[1]:.2f}%<extra></extra>',
+                hovertemplate='<b>%{y}</b><br>💰 Le Paga: $%{x:,.0f}<br>Transacciones: %{customdata[0]}<br>Tasa Prom: %{customdata[1]:.2f}%<extra></extra>',
                 customdata=clients_df[['transactions', 'avg_commission_rate']]
             )
-            st.plotly_chart(fig_clients, use_container_width=True)
-            st.caption("💰 These clients generate the most commission earnings for YOUR company")
+            st.plotly_chart(fig_clients, width="stretch")
+            st.caption("💰 Estos clientes generan las mayores comisiones para SU empresa")
         else:
-            st.info("No client data available")
+            st.info("No hay datos de clientes disponibles")
     
-    # Referenciador Performance
+    # Desempeño de Referenciadores
     st.markdown("---")
-    st.subheader("🤝 All Referenciadores - Your commission drivers")
+    st.subheader("🤝 Todos los Referenciadores - Sus Impulsores de Comisión")
     
-    with st.expander("ℹ️ What does this show?", expanded=False):
+    with st.expander("ℹ️ ¿Qué muestra esto?", expanded=False):
         st.markdown("""
-        **Business Question:** Which referenciadores are bringing in the most commission earnings for YOUR company?
+        **Pregunta de Negocio:** ¿Qué referenciadores están trayendo más comisiones para SU empresa?
         
-        **What we're measuring:**
-        - **Total commission volume** each referenciador has generated = Commission they brought YOU
-        - Number of operations they've facilitated
-        - Average commission per operation
-        - **Estimated earnings for each referenciador** (what YOU pay them from commissions)
+        **Qué estamos midiendo:**
+        - **Volumen total de comisión** que cada referenciador ha generado
+        - Número de operaciones que han facilitado
+        - Comisión promedio por operación
+        - **Ganancias estimadas para cada referenciador** (lo que USTED les paga de comisiones)
         
-        **Why it matters:**
-        - These people are directly responsible for YOUR commission earnings!
-        - Top performers deserve bonuses and recognition
-        - They're incentivized by commission, so they're motivated to bring more business
+        **Por qué importa:**
+        - ¡Estas personas son directamente responsables de SUS comisiones!
+        - Los mejores merecen bonificaciones y reconocimiento
+        - Están incentivados por comisión, así que están motivados a traer más negocio
         
-        **How to use it:**
-        - **Reward top performers** - Give them bonuses, public recognition, better territories
-        - **Learn from them** - What are they doing right? Teach others their methods
-        - **Motivate others** - Show the team what top performers earn
-        - **Retention** - Don't lose your best commission generators to competitors!
+        **Cómo usarlo:**
+        - **Recompense a los mejores** - Déles bonificaciones, reconocimiento público, mejores territorios
+        - **Aprenda de ellos** - ¿Qué están haciendo bien? Enseñe sus métodos a otros
+        - **Motive a otros** - Muestre al equipo lo que ganan los mejores
+        - **Retención** - ¡No pierda a sus mejores generadores de comisión frente a competidores!
         
-        **Key insight:** Your top referenciadores = Your money-makers. Invest in keeping them happy and productive!
+        **Perspectiva clave:** Sus mejores referenciadores = Sus generadores de dinero. ¡Invierta en mantenerlos contentos y productivos!
         """)
     
     col_ref1, col_ref2 = st.columns(2)
@@ -537,21 +521,16 @@ with tabs[0]:
             ORDER BY total_commission DESC
         """
         
-        with st.expander("🔍 View SQL Query", expanded=False):
+        with st.expander("🔍 Ver Consulta SQL", expanded=False):
             st.code(referenciador_query, language="sql")
         
-        referenciador_df = safe_query(referenciador_query, "all referenciadores")
+        referenciador_df = safe_query(referenciador_query, "todos los referenciadores")
         
         if not referenciador_df.empty:
-            # Show chart for top 10 for visualization clarity
             top_10_ref_df = referenciador_df.head(10).copy()
-            
-            # Convert REFERENCIADOR to string for better display
             top_10_ref_df['REFERENCIADOR'] = top_10_ref_df['REFERENCIADOR'].astype(str)
             
             fig_ref = go.Figure()
-            
-            # Add vertical bar chart
             fig_ref.add_trace(go.Bar(
                 x=top_10_ref_df['REFERENCIADOR'],
                 y=top_10_ref_df['total_commission'],
@@ -564,47 +543,39 @@ with tabs[0]:
                 text=top_10_ref_df['total_commission'],
                 texttemplate='$%{text:,.0f}',
                 textposition='outside',
-                hovertemplate='<b>Ref Code: %{x}</b><br>' +
-                             'Total Commission: $%{y:,.0f}<br>' +
-                             'Operations: %{customdata[0]:,.0f}<br>' +
-                             'Avg per Op: $%{customdata[1]:,.0f}<br>' +
-                             'Est. Earnings: $%{customdata[2]:,.0f}<extra></extra>',
+                hovertemplate='<b>Cód. Ref: %{x}</b><br>' +
+                             'Comisión Total: $%{y:,.0f}<br>' +
+                             'Operaciones: %{customdata[0]:,.0f}<br>' +
+                             'Prom por Op: $%{customdata[1]:,.0f}<br>' +
+                             'Ganancias Est.: $%{customdata[2]:,.0f}<extra></extra>',
                 customdata=top_10_ref_df[['total_operations', 'avg_commission_per_op', 'referenciador_earnings']]
             ))
             
             fig_ref.update_layout(
                 title={
-                    'text': "Top 10 commission drivers - Commission Volume Generated",
+                    'text': "Top 10 Impulsores de Comisión - Volumen Generado",
                     'font': {'size': 16, 'color': '#2c3e50'}
                 },
-                xaxis_title="Referenciador Code",
-                yaxis_title="Total Commission Earnings ($) - Generated for YOU",
+                xaxis_title="Código Referenciador",
+                yaxis_title="Total Comisiones Ganadas ($) - Generadas para USTED",
                 height=500,
                 margin=dict(l=80, r=40, t=80, b=80),
                 plot_bgcolor='rgba(240,240,240,0.3)',
                 paper_bgcolor='white',
                 font=dict(size=12),
-                xaxis=dict(
-                    showgrid=False,
-                    tickangle=-45  # Angle the labels for better readability
-                ),
-                yaxis=dict(
-                    showgrid=True,
-                    gridcolor='lightgray',
-                    tickformat='$,.0f'
-                )
+                xaxis=dict(showgrid=False, tickangle=-45),
+                yaxis=dict(showgrid=True, gridcolor='lightgray', tickformat='$,.0f')
             )
             
-            st.plotly_chart(fig_ref, use_container_width=True)
-            st.caption("💡 Chart shows top 10 for clarity - full list in table below")
+            st.plotly_chart(fig_ref, width="stretch")
+            st.caption("💡 El gráfico muestra el top 10 para mayor claridad - lista completa en la tabla inferior")
         else:
-            st.info("No referenciador data available")
+            st.info("No hay datos de referenciadores disponibles")
     
     with col_ref2:
         if not referenciador_df.empty:
-            st.markdown(f"**Complete Performance Metrics - All {len(referenciador_df)} Referenciadores**")
+            st.markdown(f"**Métricas de Desempeño Completas - Todos los {len(referenciador_df)} Referenciadores**")
             
-            # Prepare display dataframe
             display_df = referenciador_df.copy()
             display_df['REFERENCIADOR'] = display_df['REFERENCIADOR'].astype(str)
             display_df = display_df[['REFERENCIADOR', 'total_operations', 'total_commission', 'total_volume', 'referenciador_earnings']]
@@ -616,53 +587,52 @@ with tabs[0]:
                     'total_volume': '${:,.0f}',
                     'referenciador_earnings': '${:,.0f}'
                 }),
-                use_container_width=True,
+                width="stretch",
                 height=500
             )
             
-            # Summary stats
             total_commission = referenciador_df['total_commission'].sum()
             total_earnings = referenciador_df['referenciador_earnings'].sum()
             
             st.info(f"""
-            📊 **Summary:**
+            📊 **Resumen:**
             - Total Referenciadores: {len(referenciador_df)}
-            - Total Commission Generated: ${total_commission:,.0f}
-            - Total Referenciador Earnings: ${total_earnings:,.0f}
+            - Total Comisión Generada: ${total_commission:,.0f}
+            - Total Ganancias Referenciadores: ${total_earnings:,.0f}
             """)
             
-            st.caption("💰 Scroll through the complete list - estimated referenciador earnings based on commission percentages")
+            st.caption("💰 Desplace por la lista completa - ganancias estimadas de referenciadores basadas en porcentajes de comisión")
         else:
-            st.info("No referenciador data available")
+            st.info("No hay datos de referenciadores disponibles")
     
-    # Product Performance
+    # Desempeño de Productos
     st.markdown("---")
-    st.subheader("📦 Product Performance - Which Products Make YOU the Most Money")
+    st.subheader("📦 Desempeño de Productos - Cuáles Productos Le Generan Más Dinero")
     
-    with st.expander("ℹ️ What does this show?", expanded=False):
+    with st.expander("ℹ️ ¿Qué muestra esto?", expanded=False):
         st.markdown("""
-        **Business Question:** Which products generate the most commission earnings for YOUR company?
+        **Pregunta de Negocio:** ¿Qué productos generan más comisiones para SU empresa?
         
-        **What we're measuring:**
-        - **Total commission earnings per product** = How much each product pays YOU
-        - Transaction volume per product (client business, not your earnings)
-        - Number of transactions per product
-        - **Average commission rate** - which products have the best margins for YOU
+        **Qué estamos midiendo:**
+        - **Comisión total por producto** = Cuánto le paga cada producto
+        - Volumen de transacciones por producto
+        - Número de transacciones por producto
+        - **Tasa promedio de comisión** - qué productos tienen los mejores márgenes para USTED
         
-        **Why it matters:**
-        - Focus on promoting products with highest commission earnings
-        - Products with high commission rates = more profitable for YOU
-        - Understanding product mix helps plan commission growth
+        **Por qué importa:**
+        - Enfóquese en promover productos con mayores comisiones
+        - Productos con altas tasas de comisión = más rentables para USTED
+        - Entender la mezcla de productos ayuda a planificar crecimiento de comisiones
         
-        **How to use it:**
-        - **Push high-margin products** - Train referenciadores to sell products with better commission rates
-        - **Bundle strategically** - Combine popular products with high-margin ones
-        - **Pricing strategy** - Consider if low-margin products should have higher rates
+        **Cómo usarlo:**
+        - **Impulse productos de alto margen** - Entrene a referenciadores para vender con mejores tasas
+        - **Agrupe estratégicamente** - Combine productos populares con los de alto margen
+        - **Estrategia de precios** - Considere si productos de bajo margen deberían tener tasas más altas
         
-        **Treemap guide:** 
-        - Bigger boxes = more commission earnings for YOU
-        - Greener color = higher commission rate (better margins)
-        - Focus on big + green boxes = your most profitable products!
+        **Guía del mapa de árbol:** 
+        - Cajas más grandes = más comisiones para USTED
+        - Color más verde = tasa de comisión más alta (mejores márgenes)
+        - ¡Enfóquese en cajas grandes y verdes = sus productos más rentables!
         """)
     
     col_prod1, col_prod2 = st.columns(2)
@@ -682,24 +652,24 @@ with tabs[0]:
             LIMIT 10
         """
         
-        with st.expander("🔍 View SQL Query", expanded=False):
+        with st.expander("🔍 Ver Consulta SQL", expanded=False):
             st.code(products_query, language="sql")
         
-        products_df = safe_query(products_query, "top products")
+        products_df = safe_query(products_query, "top productos")
         
         if not products_df.empty:
             fig_products = px.treemap(
                 products_df,
                 path=['NOMBRE PRODUCTO'],
                 values='commission_earnings',
-                title="Commission by Product (Treemap)",
+                title="Comisión por Producto (Mapa de Árbol)",
                 color='avg_commission_rate',
                 color_continuous_scale='RdYlGn',
-                labels={'avg_commission_rate': 'Avg Commission %'}
+                labels={'avg_commission_rate': 'Tasa Comisión Prom %'}
             )
-            st.plotly_chart(fig_products, use_container_width=True)
+            st.plotly_chart(fig_products, width="stretch")
         else:
-            st.info("No product data available")
+            st.info("No hay datos de productos disponibles")
     
     with col_prod2:
         if not products_df.empty:
@@ -710,52 +680,52 @@ with tabs[0]:
                     'transactions': '{:,.0f}',
                     'avg_commission_rate': '{:.2f}%'
                 }),
-                use_container_width=True,
+                width="stretch",
                 height=400
             )
 
-# --- TAB 2: STRATEGIC INSIGHTS ---
+# --- PESTAÑA 2: PERSPECTIVAS ESTRATÉGICAS ---
 with tabs[1]:
-    st.header("💡 AI-Driven Business Opportunities")
+    st.header("💡 Oportunidades de Negocio Impulsadas por IA")
     
     st.markdown("""
     <div style='background-color: #e8f4f8; padding: 15px; border-radius: 10px; margin-bottom: 20px;'>
-    <b>🎯 Strategic Actions:</b><br>
-    • <b>Churn Prevention</b>: Re-engage inactive clients<br>
-    • <b>Cross-Selling</b>: Bundle frequently paired products<br>
-    • <b>Growth Opportunities</b>: Target underserved segments
+    <b>🎯 Acciones Estratégicas:</b><br>
+    • <b>Prevención de Fuga</b>: Reactiva clientes inactivos<br>
+    • <b>Venta Cruzada</b>: Agrupa productos frecuentemente emparejados<br>
+    • <b>Oportunidades de Crecimiento</b>: Apunta a segmentos desatendidos
     </div>
     """, unsafe_allow_html=True)
     
     col_strat1, col_strat2 = st.columns(2)
     
     with col_strat1:
-        st.subheader("🚨 Churn Risk Analysis - Protect Your Commission Earnings!")
-        st.markdown("**High-value clients who haven't paid you recently (60+ days)**")
+        st.subheader("🚨 Análisis de Riesgo de Fuga - ¡Proteja Sus Comisiones!")
+        st.markdown("**Clientes de alto valor que no han pagado recientemente (60+ días)**")
         
-        with st.expander("ℹ️ What does this show?", expanded=False):
+        with st.expander("ℹ️ ¿Qué muestra esto?", expanded=False):
             st.markdown("""
-            **Business Question:** Which clients used to pay YOU good commissions but have stopped?
+            **Pregunta de Negocio:** ¿Qué clientes solían pagar buenas comisiones pero han dejado de hacerlo?
             
-            **What we're measuring:**
-            - Clients who haven't had a transaction in over 60 days
-            - How many days since they last generated commission earnings for YOU
-            - **Their lifetime commission value** = Total money they've paid YOU historically
-            - Total number of transactions they've done
+            **Qué estamos midiendo:**
+            - Clientes que no han tenido transacciones en más de 60 días
+            - Cuántos días desde que generaron comisiones por última vez
+            - **Su valor de comisión de por vida** = Total de dinero que le han pagado históricamente
+            - Número total de transacciones realizadas
             
-            **Why it matters - THIS IS CRITICAL:**
-            - These clients USED TO pay you money - now they're not!
-            - You're losing recurring commission earnings
-            - They may have switched to a competitor
-            - Every day they're inactive = lost income for YOUR company
+            **Por qué importa - ESTO ES CRÍTICO:**
+            - ¡Estos clientes SOLÍAN pagarle dinero - ahora no lo hacen!
+            - Está perdiendo comisiones recurrentes
+            - Pueden haberse pasado a un competidor
+            - Cada día inactivos = ingresos perdidos para SU empresa
             
-            **How to use it - URGENT ACTIONS:**
-            1. **Call the top 5 TODAY** - These are high-value commission sources you're losing
-            2. **Find out why** - Did they switch? Are they unhappy? Do they have a problem?
-            3. **Win them back** - Offer special deals, better service, personal attention
-            4. **Calculate the loss** - If they don't come back, how much annual commission do you lose?
+            **Cómo usarlo - ACCIONES URGENTES:**
+            1. **Llame al top 5 HOY** - Son fuentes de comisión de alto valor que está perdiendo
+            2. **Averigüe por qué** - ¿Se cambiaron? ¿Están insatisfechos? ¿Tienen un problema?
+            3. **Recupérelos** - Ofrezca tratos especiales, mejor servicio, atención personal
+            4. **Calcule la pérdida** - Si no vuelven, ¿cuánta comisión anual pierde?
             
-            **Example:** If a client who used to pay you $50,000/year in commissions is inactive for 60 days, you've already lost ~$8,000!
+            **Ejemplo:** Si un cliente que solía pagarle $50.000/año en comisiones lleva 60 días inactivo, ¡ya ha perdido ~$8.000!
             """)
         
         churn_query = f"""
@@ -773,10 +743,10 @@ with tabs[1]:
             LIMIT 15
         """
         
-        with st.expander("🔍 View SQL Query", expanded=False):
+        with st.expander("🔍 Ver Consulta SQL", expanded=False):
             st.code(churn_query, language="sql")
         
-        churn_df = safe_query(churn_query, "churn analysis")
+        churn_df = safe_query(churn_query, "análisis de fuga")
         
         if not churn_df.empty:
             st.dataframe(
@@ -785,36 +755,36 @@ with tabs[1]:
                     'lifetime_commission': '${:,.0f}',
                     'total_transactions': '{:,.0f}'
                 }),
-                use_container_width=True
+                width="stretch"
             )
             total_at_risk = churn_df['lifetime_commission'].sum()
-            st.error(f"🚨 **URGENT:** {len(churn_df)} high-value clients at risk! They've paid YOU ${total_at_risk:,.0f} in total commissions historically!")
-            st.markdown("**Action Required:** Contact these clients immediately to prevent permanent commission loss!")
+            st.error(f"🚨 **URGENTE:** ¡{len(churn_df)} clientes de alto valor en riesgo! Le han pagado ${total_at_risk:,.0f} en comisiones históricamente!")
+            st.markdown("**Acción Requerida:** ¡Contacte a estos clientes de inmediato para evitar pérdida permanente de comisiones!")
         else:
-            st.success("✅ No high-value clients at churn risk")
+            st.success("✅ No hay clientes de alto valor en riesgo de fuga")
     
     with col_strat2:
-        st.subheader("🎯 Cross-Selling Opportunities")
-        st.markdown("**Products frequently bought together**")
+        st.subheader("🎯 Oportunidades de Venta Cruzada")
+        st.markdown("**Productos frecuentemente comprados juntos**")
         
-        with st.expander("ℹ️ What does this show?", expanded=False):
+        with st.expander("ℹ️ ¿Qué muestra esto?", expanded=False):
             st.markdown("""
-            **Business Question:** Which products do clients often buy together?
+            **Pregunta de Negocio:** ¿Qué productos compran los clientes juntos frecuentemente?
             
-            **What we're measuring:**
-            - Product pairs that the same clients purchase
-            - Number of shared clients between product pairs
-            - Market penetration percentage (what % of clients buy both)
+            **Qué estamos midiendo:**
+            - Pares de productos que los mismos clientes compran
+            - Número de clientes compartidos entre pares de productos
+            - Porcentaje de penetración de mercado
             
-            **Why it matters:**
-            - Create bundled product offers
-            - Train sales team on natural product combinations
-            - Increase commission per client by suggesting complementary products
+            **Por qué importa:**
+            - Crear ofertas de productos agrupados
+            - Entrenar al equipo de ventas en combinaciones naturales
+            - Aumentar comisión por cliente sugiriendo productos complementarios
             
-            **How to use it:**
-            - When a client buys Product A, suggest Product B
-            - Create promotional bundles of frequently paired products
-            - Design marketing campaigns highlighting these combinations
+            **Cómo usarlo:**
+            - Cuando un cliente compre Producto A, sugiera Producto B
+            - Cree paquetes promocionales de productos frecuentemente emparejados
+            - Diseñe campañas de marketing destacando estas combinaciones
             """)
         
         cross_sell_query = f"""
@@ -841,48 +811,44 @@ with tabs[1]:
             LIMIT 10
         """
         
-        with st.expander("🔍 View SQL Query", expanded=False):
+        with st.expander("🔍 Ver Consulta SQL", expanded=False):
             st.code(cross_sell_query, language="sql")
         
-        cross_sell_df = safe_query(cross_sell_query, "cross-sell analysis")
+        cross_sell_df = safe_query(cross_sell_query, "análisis de venta cruzada")
         
         if not cross_sell_df.empty:
-            st.dataframe(cross_sell_df, use_container_width=True)
-            st.info("💡 Create bundled offers for top product pairs")
+            st.dataframe(cross_sell_df, width="stretch")
+            st.info("💡 Cree ofertas agrupadas para los mejores pares de productos")
         else:
-            st.info("Not enough data for cross-sell analysis")
+            st.info("No hay suficientes datos para el análisis de venta cruzada")
     
-    # Client Segmentation
+    # Segmentación de Clientes
     st.markdown("---")
-    st.subheader("👥 Client Segmentation by Commission Value - Who Pays YOU the Most")
+    st.subheader("👥 Segmentación de Clientes por Valor de Comisión - Quién le Paga Más")
     
-    with st.expander("ℹ️ What does this show?", expanded=False):
+    with st.expander("ℹ️ ¿Qué muestra esto?", expanded=False):
         st.markdown("""
-        **Business Question:** How should we prioritize clients based on how much commission earnings they generate for US?
+        **Pregunta de Negocio:** ¿Cómo debemos priorizar clientes según las comisiones que generan para NOSOTROS?
         
-        **What we're measuring:**
-        - Clients grouped into 4 segments based on **commission earnings** they pay YOU:
-          - **VIP (Top 20%)**: Clients who pay YOU the most in commissions - your cash cows!
-          - **High Value (50-80%)**: Solid commission payers - important commission sources
-          - **Medium Value (20-50%)**: Regular commission payers - moderate commission
-          - **Low Value (Bottom 20%)**: Small commission payers - newer or occasional clients
+        **Qué estamos midiendo:**
+        - Clientes agrupados en 4 segmentos según **comisiones** que le pagan:
+          - **VIP (Top 20%)**: Clientes que le pagan MÁS comisiones - ¡sus vacas lecheras!
+          - **Alto Valor (50-80%)**: Buenos pagadores de comisión - fuentes importantes
+          - **Valor Medio (20-50%)**: Pagadores regulares de comisión - comisión moderada
+          - **Bajo Valor (Inferior 20%)**: Pequeños pagadores - clientes nuevos u ocasionales
         
-        **Why it matters - This is YOUR money segmentation:**
-        - VIP clients = Your biggest paychecks - treat them like gold!
-        - Different service levels = allocate resources where YOU make the most money
-        - Growth strategy = move clients up to higher commission tiers
+        **Por qué importa - Esta es SU segmentación de dinero:**
+        - Clientes VIP = Sus mayores cheques de pago - ¡trátelos como oro!
+        - Diferentes niveles de servicio = asigne recursos donde USTED gana más
+        - Estrategia de crecimiento = mueva clientes a niveles de comisión más altos
         
-        **How to use it:**
-        - **VIP Clients**: Dedicated account managers, priority service, personal attention
-          - *They pay your bills - don't lose them!*
-        - **High Value**: Regular check-ins, special offers to increase their business
-          - *Potential to become VIP - invest in them*
-        - **Medium Value**: Standard service, opportunities to upsell
-          - *Can they do more volume? Better commission rates?*
-        - **Low Value**: Efficient service, identify growth potential
-          - *Can they grow or are they just small accounts?*
+        **Cómo usarlo:**
+        - **Clientes VIP**: Gestores de cuenta dedicados, servicio prioritario, atención personal
+        - **Alto Valor**: Revisiones regulares, ofertas especiales para aumentar su negocio
+        - **Valor Medio**: Servicio estándar, oportunidades de venta adicional
+        - **Bajo Valor**: Servicio eficiente, identificar potencial de crecimiento
         
-        **Key insight:** The more commission earnings a client generates, the more attention they deserve from YOUR team!
+        **Perspectiva clave:** ¡Cuantas más comisiones genera un cliente, más atención merece de SU equipo!
         """)
     
     segment_query = f"""
@@ -902,10 +868,10 @@ with tabs[1]:
                 WHEN total_commission >= (SELECT PERCENTILE_CONT(0.8) WITHIN GROUP (ORDER BY total_commission) FROM client_stats) 
                     THEN 'VIP (Top 20%)'
                 WHEN total_commission >= (SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY total_commission) FROM client_stats)
-                    THEN 'High Value (50-80%)'
+                    THEN 'Alto Valor (50-80%)'
                 WHEN total_commission >= (SELECT PERCENTILE_CONT(0.2) WITHIN GROUP (ORDER BY total_commission) FROM client_stats)
-                    THEN 'Medium Value (20-50%)'
-                ELSE 'Low Value (Bottom 20%)'
+                    THEN 'Valor Medio (20-50%)'
+                ELSE 'Bajo Valor (Inferior 20%)'
             END as segment,
             COUNT(*) as client_count,
             SUM(total_commission) as segment_commission,
@@ -916,10 +882,10 @@ with tabs[1]:
         ORDER BY segment_commission DESC
     """
     
-    with st.expander("🔍 View SQL Query", expanded=False):
+    with st.expander("🔍 Ver Consulta SQL", expanded=False):
         st.code(segment_query, language="sql")
     
-    segment_df = safe_query(segment_query, "client segmentation")
+    segment_df = safe_query(segment_query, "segmentación de clientes")
     
     if not segment_df.empty:
         col_seg1, col_seg2 = st.columns(2)
@@ -929,24 +895,24 @@ with tabs[1]:
                 segment_df,
                 values='client_count',
                 names='segment',
-                title='Client Distribution by Commission Value Segment',
+                title='Distribución de Clientes por Segmento de Valor',
                 hole=0.4,
                 color_discrete_sequence=px.colors.sequential.Greens_r
             )
             fig_segment.update_traces(
-                hovertemplate='<b>%{label}</b><br>Clients: %{value}<br>commission earnings: $%{customdata[0]:,.0f}<extra></extra>',
+                hovertemplate='<b>%{label}</b><br>Clientes: %{value}<br>Comisiones: $%{customdata[0]:,.0f}<extra></extra>',
                 customdata=segment_df[['segment_commission']]
             )
-            st.plotly_chart(fig_segment, use_container_width=True)
-            st.caption("📊 Distribution of clients across value segments")
+            st.plotly_chart(fig_segment, width="stretch")
+            st.caption("📊 Distribución de clientes por segmento de valor")
         
         with col_seg2:
             fig_commission = px.bar(
                 segment_df,
                 x='segment',
                 y='segment_commission',
-                title='Commission Contribution by Segment - YOUR Earnings',
-                labels={'segment_commission': 'Commission ($) - YOUR EARNINGS', 'segment': 'Client Segment'},
+                title='Contribución de Comisión por Segmento - SUS Ganancias',
+                labels={'segment_commission': 'Comisión ($) - SUS GANANCIAS', 'segment': 'Segmento de Cliente'},
                 color='segment_commission',
                 color_continuous_scale='Greens',
                 text='segment_commission'
@@ -955,11 +921,10 @@ with tabs[1]:
                 texttemplate='$%{text:,.0f}',
                 textposition='outside'
             )
-            st.plotly_chart(fig_commission, use_container_width=True)
-            st.caption("💰 How much commission earnings each segment pays YOU")
+            st.plotly_chart(fig_commission, width="stretch")
+            st.caption("💰 Cuánto le paga en comisiones cada segmento")
         
-        # Add summary table
-        st.markdown("**Detailed Segment Breakdown**")
+        st.markdown("**Desglose Detallado por Segmento**")
         display_segment_df = segment_df.copy()
         st.dataframe(
             display_segment_df.style.format({
@@ -968,60 +933,57 @@ with tabs[1]:
                 'avg_transactions': '{:,.1f}',
                 'avg_commission_per_deal': '${:,.0f}'
             }),
-            use_container_width=True
+            width="stretch"
         )
         
-        # Calculate VIP percentage
         vip_commission = segment_df[segment_df['segment'] == 'VIP (Top 20%)']['segment_commission'].sum()
         total_commission = segment_df['segment_commission'].sum()
         vip_percentage = (vip_commission / total_commission * 100) if total_commission > 0 else 0
         
-        st.info(f"💎 **VIP Insight:** Your top 20% of clients generate **${vip_commission:,.0f}** ({vip_percentage:.1f}%) of your total commission earnings!")
+        st.info(f"💎 **Perspectiva VIP:** Su top 20% de clientes genera **${vip_commission:,.0f}** ({vip_percentage:.1f}%) de sus comisiones totales!")
 
-# --- TAB 3: BUYER-SELLER NETWORK ---
+# --- PESTAÑA 3: RED COMPRADORES-VENDEDORES ---
 with tabs[2]:
-    st.header("🔗 Buyer-Seller Network Analysis")
+    st.header("🔗 Análisis de Red Compradores-Vendedores")
     
     st.markdown("""
     <div style='background-color: #e8f4f8; padding: 15px; border-radius: 10px; margin-bottom: 20px;'>
-    <b>💡 Understanding the Business Model:</b><br>
-    • <b>The Transaction Flow:</b> Seller generates bill → Buyer receives goods → Your company registers the bill at BMC<br>
-    • <b>Registration Benefits:</b> Either buyer OR seller gets tax benefits from government<br>
-    • <b>Your Role:</b> You earn commission for facilitating the registration<br>
-    • <b>Principal:</b> Whoever pays for registration (buyer or seller) is marked as "PRINCIPAL"
+    <b>💡 Entendiendo el Modelo de Negocio:</b><br>
+    • <b>Flujo de Transacción:</b> El vendedor genera factura → El comprador recibe mercancía → Su empresa registra la factura en BMC<br>
+    • <b>Beneficios del Registro:</b> El comprador O el vendedor obtienen beneficios tributarios del gobierno<br>
+    • <b>Su Rol:</b> Usted gana comisión por facilitar el registro<br>
+    • <b>Principal:</b> Quien paga por el registro (comprador o vendedor) se marca como "PRINCIPAL"
     </div>
     """, unsafe_allow_html=True)
     
-    # Network Insights Section
     st.markdown("---")
-    st.subheader("🕸️ Network Insights & Key Relationships")
+    st.subheader("🕸️ Perspectivas de la Red y Relaciones Clave")
     
     col_net1, col_net2 = st.columns(2)
     
     with col_net1:
-        st.markdown("#### 🔄 Hub Analysis - Who Connects the Most?")
+        st.markdown("#### 🔄 Análisis de Nodos Centrales - ¿Quién Conecta Más?")
         
-        with st.expander("ℹ️ What does this show?", expanded=False):
+        with st.expander("ℹ️ ¿Qué muestra esto?", expanded=False):
             st.markdown("""
-            **Business Question:** Who are the key players connecting buyers and sellers?
+            **Pregunta de Negocio:** ¿Quiénes son los actores clave que conectan compradores y vendedores?
             
-            **What we're measuring:**
-            - **Sellers with most unique buyers** - These are your distribution hubs
-            - **Buyers with most unique sellers** - These are your aggregators/retailers
-            - Commission earned from each hub
+            **Qué estamos midiendo:**
+            - **Vendedores con más compradores únicos** - Estos son sus centros de distribución
+            - **Compradores con más vendedores únicos** - Estos son sus agregadores/minoristas
+            - Comisión ganada de cada nodo central
             
-            **Why it matters:**
-            - Hub sellers = Large producers/distributors with wide reach
-            - Hub buyers = Large retailers/aggregators sourcing from many suppliers
-            - Losing a hub affects many relationships and commission streams
+            **Por qué importa:**
+            - Vendedores centrales = Grandes productores/distribuidores con amplio alcance
+            - Compradores centrales = Grandes minoristas/agregadores comprando de muchos proveedores
+            - Perder un nodo central afecta muchas relaciones y flujos de comisión
             
-            **How to use it:**
-            - Protect hub relationships - they're critical to your network
-            - Offer volume discounts or incentives to hubs
-            - If a hub churns, you lose multiple commission opportunities
+            **Cómo usarlo:**
+            - Proteja las relaciones centrales - son críticas para su red
+            - Ofrezca descuentos por volumen o incentivos a nodos centrales
+            - Si un nodo central abandona, pierde múltiples oportunidades de comisión
             """)
         
-        # Top Seller Hubs
         seller_hub_where = filter_query + (" AND " if filter_query else "WHERE ") + '"NOMBRE VENDEDOR" IS NOT NULL AND "NIT COMPRADOR" IS NOT NULL'
         seller_hub_query = f"""
             SELECT 
@@ -1038,29 +1000,29 @@ with tabs[2]:
             LIMIT 10
         """
         
-        with st.expander("🔍 View SQL Query", expanded=False):
+        with st.expander("🔍 Ver Consulta SQL", expanded=False):
             st.code(seller_hub_query, language="sql")
         
-        seller_hubs_df = safe_query(seller_hub_query, "seller hubs")
+        seller_hubs_df = safe_query(seller_hub_query, "nodos vendedores")
         
         if not seller_hubs_df.empty:
-            st.markdown("**🏭 Top Seller Hubs (Most Connected Sellers)**")
+            st.markdown("**🏭 Principales Nodos de Vendedores (Más Conectados)**")
             
             fig_seller_hub = px.bar(
                 seller_hubs_df,
                 x='unique_buyers',
                 y='seller',
                 orientation='h',
-                title='Sellers with Most Unique Buyers',
-                labels={'unique_buyers': 'Number of Unique Buyers', 'seller': 'Seller'},
+                title='Vendedores con Más Compradores Únicos',
+                labels={'unique_buyers': 'Número de Compradores Únicos', 'seller': 'Vendedor'},
                 color='total_commission',
                 color_continuous_scale='Oranges',
                 hover_data=['total_commission', 'total_transactions']
             )
             fig_seller_hub.update_traces(
-                hovertemplate='<b>%{y}</b><br>Unique Buyers: %{x}<br>Commission: $%{customdata[0]:,.0f}<br>Transactions: %{customdata[1]:,.0f}<extra></extra>'
+                hovertemplate='<b>%{y}</b><br>Compradores Únicos: %{x}<br>Comisión: $%{customdata[0]:,.0f}<br>Transacciones: %{customdata[1]:,.0f}<extra></extra>'
             )
-            st.plotly_chart(fig_seller_hub, use_container_width=True)
+            st.plotly_chart(fig_seller_hub, width="stretch")
             
             st.dataframe(
                 seller_hubs_df.style.format({
@@ -1069,13 +1031,12 @@ with tabs[2]:
                     'total_transactions': '{:,.0f}',
                     'total_volume': '${:,.0f}'
                 }),
-                use_container_width=True
+                width="stretch"
             )
         else:
-            st.info("No seller hub data available")
+            st.info("No hay datos de nodos de vendedores disponibles")
     
     with col_net2:
-        # Top Buyer Hubs
         buyer_hub_where = filter_query + (" AND " if filter_query else "WHERE ") + '"NOMBRE COMPRADOR" IS NOT NULL AND "NIT VENDEDOR" IS NOT NULL'
         buyer_hub_query = f"""
             SELECT 
@@ -1092,29 +1053,29 @@ with tabs[2]:
             LIMIT 10
         """
         
-        with st.expander("🔍 View SQL Query", expanded=False):
+        with st.expander("🔍 Ver Consulta SQL", expanded=False):
             st.code(buyer_hub_query, language="sql")
         
-        buyer_hubs_df = safe_query(buyer_hub_query, "buyer hubs")
+        buyer_hubs_df = safe_query(buyer_hub_query, "nodos compradores")
         
         if not buyer_hubs_df.empty:
-            st.markdown("**🏪 Top Buyer Hubs (Most Connected Buyers)**")
+            st.markdown("**🏪 Principales Nodos de Compradores (Más Conectados)**")
             
             fig_buyer_hub = px.bar(
                 buyer_hubs_df,
                 x='unique_sellers',
                 y='buyer',
                 orientation='h',
-                title='Buyers with Most Unique Sellers',
-                labels={'unique_sellers': 'Number of Unique Sellers', 'buyer': 'Buyer'},
+                title='Compradores con Más Vendedores Únicos',
+                labels={'unique_sellers': 'Número de Vendedores Únicos', 'buyer': 'Comprador'},
                 color='total_commission',
                 color_continuous_scale='Greens',
                 hover_data=['total_commission', 'total_transactions']
             )
             fig_buyer_hub.update_traces(
-                hovertemplate='<b>%{y}</b><br>Unique Sellers: %{x}<br>Commission: $%{customdata[0]:,.0f}<br>Transactions: %{customdata[1]:,.0f}<extra></extra>'
+                hovertemplate='<b>%{y}</b><br>Vendedores Únicos: %{x}<br>Comisión: $%{customdata[0]:,.0f}<br>Transacciones: %{customdata[1]:,.0f}<extra></extra>'
             )
-            st.plotly_chart(fig_buyer_hub, use_container_width=True)
+            st.plotly_chart(fig_buyer_hub, width="stretch")
             
             st.dataframe(
                 buyer_hubs_df.style.format({
@@ -1123,42 +1084,41 @@ with tabs[2]:
                     'total_transactions': '{:,.0f}',
                     'total_volume': '${:,.0f}'
                 }),
-                use_container_width=True
+                width="stretch"
             )
         else:
-            st.info("No buyer hub data available")
+            st.info("No hay datos de nodos de compradores disponibles")
     
-    # Registration Principal Analysis
     st.markdown("---")
-    st.subheader("💼 Registration Principal Analysis - Who Pays for Registration?")
+    st.subheader("💼 Análisis del Principal de Registro - ¿Quién Paga el Registro?")
     
-    with st.expander("ℹ️ What does this show?", expanded=False):
+    with st.expander("ℹ️ ¿Qué muestra esto?", expanded=False):
         st.markdown("""
-        **Business Question:** Who typically pays for BMC registration - buyers or sellers?
+        **Pregunta de Negocio:** ¿Quién paga típicamente el registro en BMC - compradores o vendedores?
         
-        **What we're measuring:**
-        - PRINCIPAL field = 'V' (Vendedor/Seller pays) or 'C' (Comprador/Buyer pays)
-        - Commission earned from buyer-paid vs seller-paid registrations
-        - Number of transactions by principal type
+        **Qué estamos midiendo:**
+        - Campo PRINCIPAL = 'V' (Vendedor paga) o 'C' (Comprador paga)
+        - Comisión ganada por registros pagados por compradores vs vendedores
+        - Número de transacciones por tipo de principal
         
-        **Why it matters:**
-        - Understand which side of the market drives your business
-        - Different pricing strategies for buyer vs seller registrations
-        - Identify if one side is more price-sensitive
+        **Por qué importa:**
+        - Entender qué lado del mercado impulsa su negocio
+        - Diferentes estrategias de precios para registros de compradores vs vendedores
+        - Identificar si un lado es más sensible al precio
         
-        **Strategic insights:**
-        - If sellers pay more → Focus marketing on sellers, they value the tax benefit
-        - If buyers pay more → Buyers see more value, target buyer acquisition
-        - Balanced split → Both sides value the service equally
+        **Perspectivas estratégicas:**
+        - Si los vendedores pagan más → Enfoque marketing en vendedores, valoran el beneficio tributario
+        - Si los compradores pagan más → Los compradores ven más valor, apunte a adquisición de compradores
+        - División equilibrada → Ambos lados valoran el servicio por igual
         """)
     
     principal_where = filter_query + (" AND " if filter_query else "WHERE ") + "PRINCIPAL IS NOT NULL"
     principal_query = f"""
         SELECT 
             CASE 
-                WHEN PRINCIPAL = 'V' THEN 'Seller Pays (Vendedor)'
-                WHEN PRINCIPAL = 'C' THEN 'Buyer Pays (Comprador)'
-                ELSE 'Unknown'
+                WHEN PRINCIPAL = 'V' THEN 'Vendedor Paga'
+                WHEN PRINCIPAL = 'C' THEN 'Comprador Paga'
+                ELSE 'Desconocido'
             END as principal_type,
             COUNT(*) as transactions,
             SUM(COMISION) as total_commission,
@@ -1171,10 +1131,10 @@ with tabs[2]:
         ORDER BY total_commission DESC
     """
     
-    with st.expander("🔍 View SQL Query", expanded=False):
+    with st.expander("🔍 Ver Consulta SQL", expanded=False):
         st.code(principal_query, language="sql")
     
-    principal_df = safe_query(principal_query, "principal analysis")
+    principal_df = safe_query(principal_query, "análisis de principal")
     
     if not principal_df.empty:
         col_prin1, col_prin2 = st.columns(2)
@@ -1184,17 +1144,17 @@ with tabs[2]:
                 principal_df,
                 values='total_commission',
                 names='principal_type',
-                title='Commission Distribution by Principal',
+                title='Distribución de Comisión por Principal',
                 hole=0.4,
                 color_discrete_sequence=['#E74C3C', '#3498DB']
             )
             fig_principal.update_traces(
-                hovertemplate='<b>%{label}</b><br>Commission: $%{value:,.0f}<br>Percentage: %{percent}<extra></extra>'
+                hovertemplate='<b>%{label}</b><br>Comisión: $%{value:,.0f}<br>Porcentaje: %{percent}<extra></extra>'
             )
-            st.plotly_chart(fig_principal, use_container_width=True)
+            st.plotly_chart(fig_principal, width="stretch")
         
         with col_prin2:
-            st.markdown("**Detailed Principal Breakdown**")
+            st.markdown("**Desglose Detallado por Principal**")
             st.dataframe(
                 principal_df.style.format({
                     'transactions': '{:,.0f}',
@@ -1203,51 +1163,48 @@ with tabs[2]:
                     'total_volume': '${:,.0f}',
                     'avg_commission_rate': '{:.2f}%'
                 }),
-                use_container_width=True
+                width="stretch"
             )
             
-            # Calculate insights
             if len(principal_df) >= 2:
-                seller_comm = principal_df[principal_df['principal_type'] == 'Seller Pays (Vendedor)']['total_commission'].sum()
-                buyer_comm = principal_df[principal_df['principal_type'] == 'Buyer Pays (Comprador)']['total_commission'].sum()
+                seller_comm = principal_df[principal_df['principal_type'] == 'Vendedor Paga']['total_commission'].sum()
+                buyer_comm = principal_df[principal_df['principal_type'] == 'Comprador Paga']['total_commission'].sum()
                 total = seller_comm + buyer_comm
                 
                 if seller_comm > buyer_comm:
-                    st.success(f"💡 **Insight:** Sellers pay for {(seller_comm/total*100):.1f}% of registrations. Focus on seller acquisition!")
+                    st.success(f"💡 **Perspectiva:** Los vendedores pagan el {(seller_comm/total*100):.1f}% de los registros. ¡Enfóquese en adquisición de vendedores!")
                 else:
-                    st.success(f"💡 **Insight:** Buyers pay for {(buyer_comm/total*100):.1f}% of registrations. Focus on buyer acquisition!")
+                    st.success(f"💡 **Perspectiva:** Los compradores pagan el {(buyer_comm/total*100):.1f}% de los registros. ¡Enfóquese en adquisición de compradores!")
     
-    # Mutual Relationships
     st.markdown("---")
-    st.subheader("🎯 Potential Client Opportunities")
+    st.subheader("🎯 Oportunidades de Clientes Potenciales")
     
-    with st.expander("ℹ️ What does this show?", expanded=False):
+    with st.expander("ℹ️ ¿Qué muestra esto?", expanded=False):
         st.markdown("""
-        **Business Question:** Who should we target as new clients?
+        **Pregunta de Negocio:** ¿A quién debemos apuntar como nuevos clientes?
         
-        **The Strategy:**
-        - If a **Seller is YOUR client**, their **Buyers** are potential clients
-        - If a **Buyer is YOUR client**, their **Sellers** are potential clients
-        - These entities already do agricultural business - they just need to register with YOU!
+        **La Estrategia:**
+        - Si un **Vendedor es SU cliente**, sus **Compradores** son clientes potenciales
+        - Si un **Comprador es SU cliente**, sus **Vendedores** son clientes potenciales
+        - ¡Estas entidades ya hacen negocio agrícola - solo necesitan registrarse con USTED!
         
-        **What we're measuring:**
-        - Entities who transact with YOUR clients but aren't clients themselves
-        - Transaction volume they're already doing (market size)
-        - Number of YOUR clients they work with (warm leads)
+        **Qué estamos midiendo:**
+        - Entidades que transaccionan con SUS clientes pero no son clientes
+        - Volumen de transacciones que ya están realizando
+        - Número de SUS clientes con quienes trabajan (prospectos cálidos)
         
-        **Why it matters:**
-        - **Warm leads** = They already know your clients, easier to convert
-        - **Proven market** = They're already doing transactions that could be registered
-        - **Network effect** = Converting them adds more connection value
+        **Por qué importa:**
+        - **Prospectos cálidos** = Ya conocen a sus clientes, más fáciles de convertir
+        - **Mercado probado** = Ya están haciendo transacciones que podrían registrarse
+        - **Efecto de red** = Convertirlos añade más valor de conexión
         
-        **How to use it:**
-        - Prioritize prospects working with multiple clients (strongest leads)
-        - Ask your clients for introductions
-        - Show them tax benefits they're missing
-        - Calculate commission opportunity = their volume × your rate
+        **Cómo usarlo:**
+        - Priorice prospectos que trabajan con múltiples clientes (mejores referencias)
+        - Pida a sus clientes introducciones
+        - Muéstreles beneficios tributarios que están perdiendo
+        - Calcule oportunidad de comisión = su volumen × su tasa
         """)
     
-    # Get list of current clients (entities marked as PRINCIPAL)
     clients_where = filter_query + (" AND " if filter_query else "WHERE ") + '"CC PPAL" IS NOT NULL AND CLIENTE IS NOT NULL'
     clients_query = f"""
         SELECT DISTINCT "CC PPAL" as client_nit, CLIENTE as client_name
@@ -1255,13 +1212,11 @@ with tabs[2]:
         {clients_where}
     """
     
-    clients_df = safe_query(clients_query, "current clients list")
+    clients_df = safe_query(clients_query, "lista de clientes actuales")
     
     if not clients_df.empty:
         client_nits = set(clients_df['client_nit'].unique())
         
-        # Find potential clients - buyers who work with our seller clients
-        # First, get seller clients
         seller_clients_where = filter_query + (" AND " if filter_query else "WHERE ") + "PRINCIPAL = 'V'"
         
         potential_buyers_query = f"""
@@ -1296,14 +1251,11 @@ with tabs[2]:
             LIMIT 20
         """
         
-        potential_buyers_df = safe_query(potential_buyers_query, "potential buyer clients")
+        potential_buyers_df = safe_query(potential_buyers_query, "compradores potenciales")
         
-        # Filter out existing clients
         if not potential_buyers_df.empty:
             potential_buyers_df = potential_buyers_df[~potential_buyers_df['prospect_nit'].isin(client_nits)]
         
-        # Find potential clients - sellers who work with our buyer clients
-        # First, get buyer clients
         buyer_clients_where = filter_query + (" AND " if filter_query else "WHERE ") + "PRINCIPAL = 'C'"
         
         potential_sellers_query = f"""
@@ -1338,120 +1290,110 @@ with tabs[2]:
             LIMIT 20
         """
         
-        potential_sellers_df = safe_query(potential_sellers_query, "potential seller clients")
+        potential_sellers_df = safe_query(potential_sellers_query, "vendedores potenciales")
         
-        # Filter out existing clients
         if not potential_sellers_df.empty:
             potential_sellers_df = potential_sellers_df[~potential_sellers_df['prospect_nit'].isin(client_nits)]
         
-        # Display results
         col_opp1, col_opp2 = st.columns(2)
         
         with col_opp1:
-            st.markdown("### 🔵 Potential Buyer Clients")
-            st.markdown("*Buyers who purchase from YOUR seller clients*")
+            st.markdown("### 🔵 Compradores Potenciales como Clientes")
+            st.markdown("*Compradores que compran a SUS clientes vendedores*")
             
             if not potential_buyers_df.empty:
-                st.success(f"🎯 Found {len(potential_buyers_df)} potential buyer clients!")
+                st.success(f"🎯 ¡Se encontraron {len(potential_buyers_df)} compradores potenciales como clientes!")
                 
-                # Summary metrics
                 total_opp = potential_buyers_df['commission_opportunity'].sum()
-                st.metric("💰 Total Commission Opportunity", f"${total_opp:,.0f}", 
-                         help="Potential commission if all these buyers become clients")
+                st.metric("💰 Oportunidad Total de Comisión", f"${total_opp:,.0f}", 
+                         help="Comisión potencial si todos estos compradores se convierten en clientes")
                 
-                # Show top opportunities
                 display_buyers = potential_buyers_df[['prospect_name', 'num_connections_to_clients', 
                                                        'total_volume', 'total_transactions', 
                                                        'commission_opportunity']].copy()
-                display_buyers.columns = ['Prospect Name', 'Connections to Clients', 'Volume', 'Transactions', 'Commission Opp.']
+                display_buyers.columns = ['Nombre del Prospecto', 'Conexiones con Clientes', 'Volumen', 'Transacciones', 'Oportunidad de Comisión']
                 
                 st.dataframe(
                     display_buyers.style.format({
-                        'Connections to Clients': '{:.0f}',
-                        'Volume': '${:,.0f}',
-                        'Transactions': '{:.0f}',
-                        'Commission Opp.': '${:,.0f}'
+                        'Conexiones con Clientes': '{:.0f}',
+                        'Volumen': '${:,.0f}',
+                        'Transacciones': '{:.0f}',
+                        'Oportunidad de Comisión': '${:,.0f}'
                     }),
-                    use_container_width=True,
+                    width="stretch",
                     height=400
                 )
                 
-                # Top prospect detail
                 if len(potential_buyers_df) > 0:
                     top_prospect = potential_buyers_df.iloc[0]
-                    with st.expander(f"🌟 Top Prospect: {top_prospect['prospect_name']}", expanded=False):
+                    with st.expander(f"🌟 Mejor Prospecto: {top_prospect['prospect_name']}", expanded=False):
                         st.markdown(f"""
-                        **Why this is a hot lead:**
-                        - Works with **{int(top_prospect['num_connections_to_clients'])}** of YOUR clients
-                        - **${top_prospect['total_volume']:,.0f}** in transaction volume
-                        - **${top_prospect['commission_opportunity']:,.0f}** commission opportunity
-                        - **{int(top_prospect['total_transactions'])}** total transactions
+                        **Por qué es un prospecto caliente:**
+                        - Trabaja con **{int(top_prospect['num_connections_to_clients'])}** de SUS clientes
+                        - **${top_prospect['total_volume']:,.0f}** en volumen de transacciones
+                        - **${top_prospect['commission_opportunity']:,.0f}** de oportunidad de comisión
+                        - **{int(top_prospect['total_transactions'])}** transacciones totales
                         
-                        **Action:** Contact your seller clients to get an introduction to this buyer!
+                        **Acción:** ¡Contacte a sus clientes vendedores para que le presenten a este comprador!
                         """)
             else:
-                st.info("No potential buyer clients found. This could mean:\n- All buyers already registered\n- Need more seller clients\n- Try expanding date filters")
+                st.info("No se encontraron compradores potenciales. Esto podría significar:\n- Todos los compradores ya están registrados\n- Se necesitan más clientes vendedores\n- Intente ampliar los filtros de fechas")
         
         with col_opp2:
-            st.markdown("### 🔴 Potential Seller Clients")
-            st.markdown("*Sellers who sell to YOUR buyer clients*")
+            st.markdown("### 🔴 Vendedores Potenciales como Clientes")
+            st.markdown("*Vendedores que venden a SUS clientes compradores*")
             
             if not potential_sellers_df.empty:
-                st.success(f"🎯 Found {len(potential_sellers_df)} potential seller clients!")
+                st.success(f"🎯 ¡Se encontraron {len(potential_sellers_df)} vendedores potenciales como clientes!")
                 
-                # Summary metrics
                 total_opp = potential_sellers_df['commission_opportunity'].sum()
-                st.metric("💰 Total Commission Opportunity", f"${total_opp:,.0f}",
-                         help="Potential commission if all these sellers become clients")
+                st.metric("💰 Oportunidad Total de Comisión", f"${total_opp:,.0f}",
+                         help="Comisión potencial si todos estos vendedores se convierten en clientes")
                 
-                # Show top opportunities
                 display_sellers = potential_sellers_df[['prospect_name', 'num_connections_to_clients', 
                                                         'total_volume', 'total_transactions', 
                                                         'commission_opportunity']].copy()
-                display_sellers.columns = ['Prospect Name', 'Connections to Clients', 'Volume', 'Transactions', 'Commission Opp.']
+                display_sellers.columns = ['Nombre del Prospecto', 'Conexiones con Clientes', 'Volumen', 'Transacciones', 'Oportunidad de Comisión']
                 
                 st.dataframe(
                     display_sellers.style.format({
-                        'Connections to Clients': '{:.0f}',
-                        'Volume': '${:,.0f}',
-                        'Transactions': '{:.0f}',
-                        'Commission Opp.': '${:,.0f}'
+                        'Conexiones con Clientes': '{:.0f}',
+                        'Volumen': '${:,.0f}',
+                        'Transacciones': '{:.0f}',
+                        'Oportunidad de Comisión': '${:,.0f}'
                     }),
-                    use_container_width=True,
+                    width="stretch",
                     height=400
                 )
                 
-                # Top prospect detail
                 if len(potential_sellers_df) > 0:
                     top_prospect = potential_sellers_df.iloc[0]
-                    with st.expander(f"🌟 Top Prospect: {top_prospect['prospect_name']}", expanded=False):
+                    with st.expander(f"🌟 Mejor Prospecto: {top_prospect['prospect_name']}", expanded=False):
                         st.markdown(f"""
-                        **Why this is a hot lead:**
-                        - Works with **{int(top_prospect['num_connections_to_clients'])}** of YOUR clients
-                        - **${top_prospect['total_volume']:,.0f}** in transaction volume
-                        - **${top_prospect['commission_opportunity']:,.0f}** commission opportunity
-                        - **{int(top_prospect['total_transactions'])}** total transactions
+                        **Por qué es un prospecto caliente:**
+                        - Trabaja con **{int(top_prospect['num_connections_to_clients'])}** de SUS clientes
+                        - **${top_prospect['total_volume']:,.0f}** en volumen de transacciones
+                        - **${top_prospect['commission_opportunity']:,.0f}** de oportunidad de comisión
+                        - **{int(top_prospect['total_transactions'])}** transacciones totales
                         
-                        **Action:** Contact your buyer clients to get an introduction to this seller!
+                        **Acción:** ¡Contacte a sus clientes compradores para que le presenten a este vendedor!
                         """)
             else:
-                st.info("No potential seller clients found. This could mean:\n- All sellers already registered\n- Need more buyer clients\n- Try expanding date filters")
+                st.info("No se encontraron vendedores potenciales. Esto podría significar:\n- Todos los vendedores ya están registrados\n- Se necesitan más clientes compradores\n- Intente ampliar los filtros de fechas")
         
-        # Combined priority list
         st.markdown("---")
-        st.markdown("### 🏆 Top 10 Priority Prospects (Combined)")
+        st.markdown("### 🏆 Top 10 Prospectos Prioritarios (Combinados)")
         
-        # Combine both lists
         all_prospects = []
         
         if not potential_buyers_df.empty:
             buyers_list = potential_buyers_df.copy()
-            buyers_list['type'] = '🔵 Buyer'
+            buyers_list['type'] = '🔵 Comprador'
             all_prospects.append(buyers_list)
         
         if not potential_sellers_df.empty:
             sellers_list = potential_sellers_df.copy()
-            sellers_list['type'] = '🔴 Seller'
+            sellers_list['type'] = '🔴 Vendedor'
             all_prospects.append(sellers_list)
         
         if all_prospects:
@@ -1460,49 +1402,48 @@ with tabs[2]:
             
             priority_display = combined_df[['prospect_name', 'type', 'num_connections_to_clients', 
                                            'commission_opportunity', 'total_volume']].copy()
-            priority_display.columns = ['Prospect', 'Type', 'Client Connections', 'Commission Opp.', 'Volume']
+            priority_display.columns = ['Prospecto', 'Tipo', 'Conexiones con Clientes', 'Oportunidad de Comisión', 'Volumen']
             
             st.dataframe(
                 priority_display.style.format({
-                    'Client Connections': '{:.0f}',
-                    'Commission Opp.': '${:,.0f}',
-                    'Volume': '${:,.0f}'
+                    'Conexiones con Clientes': '{:.0f}',
+                    'Oportunidad de Comisión': '${:,.0f}',
+                    'Volumen': '${:,.0f}'
                 }),
-                use_container_width=True
+                width="stretch"
             )
             
             st.info(f"""
-            💡 **Sales Strategy:**
-            - Start with prospects connected to **multiple clients** (stronger referrals)
-            - Approach them through your **existing clients** (warm introduction)
-            - Highlight the **tax benefits** they're currently missing
-            - Show them the **commission opportunity** represents their potential savings
+            💡 **Estrategia Comercial:**
+            - Comience con prospectos conectados a **múltiples clientes** (referencias más fuertes)
+            - Acérquese a ellos a través de sus **clientes existentes** (introducción cálida)
+            - Destaque los **beneficios tributarios** que actualmente están perdiendo
+            - Muéstreles que la **oportunidad de comisión** representa sus ahorros potenciales
             """)
     else:
-        st.warning('⚠️ Unable to determine current clients. Check if "CC PPAL" field is populated.')
+        st.warning('⚠️ No se pueden determinar los clientes actuales. Verifique si el campo "CC PPAL" está poblado.')
     
-    # Mutual Relationships
     st.markdown("---")
-    st.subheader("🤝 Mutual Business Relationships")
+    st.subheader("🤝 Relaciones Comerciales Mutuas")
     
-    with st.expander("ℹ️ What does this show?", expanded=False):
+    with st.expander("ℹ️ ¿Qué muestra esto?", expanded=False):
         st.markdown("""
-        **Business Question:** Which buyer-seller pairs do the most business together?
+        **Pregunta de Negocio:** ¿Qué pares comprador-vendedor hacen más negocio juntos?
         
-        **What we're measuring:**
-        - Top buyer-seller pairs by transaction frequency
-        - Commission earned from each relationship
-        - Whether it's a one-way or mutual registration pattern
+        **Qué estamos midiendo:**
+        - Principales pares comprador-vendedor por frecuencia de transacciones
+        - Comisión ganada de cada relación
+        - Si es un patrón de registro unilateral o mutuo
         
-        **Why it matters:**
-        - **Strong relationships** = Predictable commission stream
-        - **Exclusive relationships** = Risk if one party switches
-        - **New relationships** = Growth opportunities
+        **Por qué importa:**
+        - **Relaciones fuertes** = Flujo de comisión predecible
+        - **Relaciones exclusivas** = Riesgo si una parte se cambia
+        - **Nuevas relaciones** = Oportunidades de crecimiento
         
-        **How to use it:**
-        - Nurture strong pairs with relationship manager support
-        - Cross-sell to established relationships (they trust each other)
-        - Monitor if exclusive pairs should diversify
+        **Cómo usarlo:**
+        - Nutra pares fuertes con soporte de gestores de relaciones
+        - Venta cruzada a relaciones establecidas (ya confían el uno en el otro)
+        - Monitoree si los pares exclusivos deberían diversificarse
         """)
     
     relationships_where = filter_query + (" AND " if filter_query else "WHERE ") + '"NOMBRE VENDEDOR" IS NOT NULL AND "NOMBRE COMPRADOR" IS NOT NULL'
@@ -1523,18 +1464,17 @@ with tabs[2]:
         LIMIT 20
     """
     
-    with st.expander("🔍 View SQL Query", expanded=False):
+    with st.expander("🔍 Ver Consulta SQL", expanded=False):
         st.code(relationships_query, language="sql")
     
-    relationships_df = safe_query(relationships_query, "mutual relationships")
+    relationships_df = safe_query(relationships_query, "relaciones mutuas")
     
     if not relationships_df.empty:
-        st.markdown("**Top 20 Buyer-Seller Relationships**")
+        st.markdown("**Top 20 Relaciones Comprador-Vendedor**")
         
-        # Add relationship strength indicator
         relationships_df['relationship_type'] = relationships_df.apply(
-            lambda row: '🔄 Mutual' if (row['seller_paid'] > 0 and row['buyer_paid'] > 0) 
-            else ('🔴 Seller Pays' if row['seller_paid'] > 0 else '🔵 Buyer Pays'),
+            lambda row: '🔄 Mutua' if (row['seller_paid'] > 0 and row['buyer_paid'] > 0) 
+            else ('🔴 Vendedor Paga' if row['seller_paid'] > 0 else '🔵 Comprador Paga'),
             axis=1
         )
         
@@ -1546,93 +1486,90 @@ with tabs[2]:
                 'seller_paid': '{:,.0f}',
                 'buyer_paid': '{:,.0f}'
             }),
-            use_container_width=True,
+            width="stretch",
             height=600
         )
         
-        # Summary insights
-        mutual_count = len(relationships_df[relationships_df['relationship_type'] == '🔄 Mutual'])
+        mutual_count = len(relationships_df[relationships_df['relationship_type'] == '🔄 Mutua'])
         total_relationships = len(relationships_df)
         
         st.info(f"""
-        📊 **Relationship Insights:**
-        - Total Top Relationships: {total_relationships}
-        - Mutual Relationships (both parties pay): {mutual_count}
-        - One-Way Relationships: {total_relationships - mutual_count}
-        - Total Commission from Top 20 Pairs: ${relationships_df['total_commission'].sum():,.0f}
+        📊 **Perspectivas de Relaciones:**
+        - Total Principales Relaciones: {total_relationships}
+        - Relaciones Mutuas (ambas partes pagan): {mutual_count}
+        - Relaciones Unilaterales: {total_relationships - mutual_count}
+        - Comisión Total de los 20 Mejores Pares: ${relationships_df['total_commission'].sum():,.0f}
         """)
     else:
-        st.info("Not enough data for relationship analysis (need at least 3 transactions per pair)")
+        st.info("No hay suficientes datos para el análisis de relaciones (se necesitan al menos 3 transacciones por par)")
     
-    # Interactive Network Visualization
+    # Visualización Interactiva de Red
     st.markdown("---")
-    st.subheader("🗺️ Interactive Network Visualization Map")
+    st.subheader("🗺️ Mapa Interactivo de Visualización de Red")
     
-    with st.expander("ℹ️ How to interact with the network map", expanded=False):
+    with st.expander("ℹ️ Cómo interactuar con el mapa de red", expanded=False):
         st.markdown("""
-        **Interactive Features:**
+        **Funciones Interactivas:**
         
-        **Mouse Controls:**
-        - 🖱️ **Hover** over nodes/lines to see details
-        - 🔍 **Zoom** with scroll wheel or pinch
-        - ✋ **Pan** by clicking and dragging on empty space
-        - 🎯 **Click** nodes to highlight connections
+        **Controles del Ratón:**
+        - 🖱️ **Pase el cursor** sobre nodos/líneas para ver detalles
+        - 🔍 **Amplíe** con la rueda del ratón o pellizco
+        - ✋ **Desplace** haciendo clic y arrastrando en espacio vacío
+        - 🎯 **Haga clic** en nodos para resaltar conexiones
         
-        **Nodes (circles):**
-        - 🔴 **Red nodes** = Sellers (vendors)
-        - 🔵 **Blue nodes** = Buyers (compradores)
-        - **Size** = Commission generated (bigger = more commission)
+        **Nodos (círculos):**
+        - 🔴 **Nodos rojos** = Vendedores
+        - 🔵 **Nodos azules** = Compradores
+        - **Tamaño** = Comisión generada (más grande = más comisión)
         
-        **Lines (edges):**
-        - Connect buyers to sellers who do business together
-        - **Thickness** = Number of transactions (thicker = more frequent)
-        - **Color intensity** = Commission value (darker = more $$)
+        **Líneas (aristas):**
+        - Conectan compradores con vendedores que hacen negocios juntos
+        - **Grosor** = Número de transacciones (más grueso = más frecuente)
+        - **Intensidad del color** = Valor de comisión (más oscuro = más $$$)
         
-        **What to look for:**
-        - **Hub nodes** (many connections) = Critical players in your network
-        - **Isolated pairs** = Exclusive relationships (risk if one leaves)
-        - **Clusters** = Business ecosystems or regional groups
-        - **Bridge nodes** = Entities connecting different clusters
+        **Qué buscar:**
+        - **Nodos centrales** (muchas conexiones) = Actores críticos en su red
+        - **Pares aislados** = Relaciones exclusivas (riesgo si uno se va)
+        - **Clústeres** = Ecosistemas de negocio o grupos regionales
+        - **Nodos puente** = Entidades conectando diferentes clústeres
         """)
     
-    # Control panel
-    st.markdown("### 🎛️ Visualization Controls")
+    st.markdown("### 🎛️ Controles de Visualización")
     col_ctrl1, col_ctrl2, col_ctrl3, col_ctrl4 = st.columns(4)
     
     with col_ctrl1:
         top_n_relationships = st.slider(
-            "Relationships to display",
+            "Relaciones a mostrar",
             min_value=10,
             max_value=100,
             value=30,
             step=10,
-            help="More relationships = more detailed but cluttered map"
+            help="Más relaciones = mapa más detallado pero más aglomerado"
         )
     
     with col_ctrl2:
         layout_type = st.selectbox(
-            "Layout Algorithm",
+            "Algoritmo de Diseño",
             options=["spring", "circular", "fruchterman_reingold", "shell"],
             index=0,
-            help="Spring=Balanced clusters, Circular=Equal spacing, Fruchterman-Reingold=Force-directed premium, Shell=Buyer/Seller rings"
+            help="Spring=Clústeres equilibrados, Circular=Espaciado igual, Fruchterman-Reingold=Dirigido por fuerza, Shell=Anillos Comprador/Vendedor"
         )
     
     with col_ctrl3:
         node_size_metric = st.selectbox(
-            "Node Size Based On",
-            options=["Commission", "Connections"],
+            "Tamaño de Nodo Basado En",
+            options=["Comisión", "Conexiones"],
             index=0,
-            help="What should determine node size?"
+            help="¿Qué debe determinar el tamaño del nodo?"
         )
     
     with col_ctrl4:
         show_labels = st.checkbox(
-            "Show Node Labels",
+            "Mostrar Etiquetas de Nodo",
             value=False,
-            help="Display names on nodes (can be cluttered with many nodes)"
+            help="Mostrar nombres en nodos (puede ser confuso con muchos nodos)"
         )
     
-    # Get network data
     network_data_where = filter_query + (" AND " if filter_query else "WHERE ") + '"NOMBRE VENDEDOR" IS NOT NULL AND "NOMBRE COMPRADOR" IS NOT NULL'
     network_data_query = f"""
         SELECT 
@@ -1648,21 +1585,19 @@ with tabs[2]:
         LIMIT {top_n_relationships}
     """
     
-    network_data_df = safe_query(network_data_query, "network data")
+    network_data_df = safe_query(network_data_query, "datos de red")
     
     if not NETWORKX_AVAILABLE:
         st.warning("""
-        ⚠️ **NetworkX not installed.** To see the interactive network map, install it:
+        ⚠️ **NetworkX no está instalado.** Para ver el mapa de red interactivo, instálelo:
         ```bash
         pip install networkx --break-system-packages
         ```
-        After installation, restart the dashboard.
+        Después de la instalación, reinicie el tablero.
         """)
     elif not network_data_df.empty and len(network_data_df) > 0:
-        # Create network graph
         G = nx.Graph()
         
-        # Add edges (relationships)
         for _, row in network_data_df.iterrows():
             G.add_edge(
                 f"S:{row['seller']}", 
@@ -1671,52 +1606,38 @@ with tabs[2]:
                 commission=row['total_commission']
             )
         
-        # Calculate node positions based on selected layout
         try:
             if layout_type == "spring":
                 pos = nx.spring_layout(G, k=2, iterations=50, seed=42)
             elif layout_type == "circular":
                 pos = nx.circular_layout(G)
             elif layout_type == "fruchterman_reingold":
-                # Fruchterman-Reingold is a premium force-directed layout
-                # More evenly distributed than spring
-                pos = nx.spring_layout(G, k=3, iterations=100, seed=42)  # Using enhanced spring parameters
+                pos = nx.spring_layout(G, k=3, iterations=100, seed=42)
             elif layout_type == "shell":
-                # Separate sellers and buyers into shells
                 sellers = [n for n in G.nodes() if n.startswith("S:")]
                 buyers = [n for n in G.nodes() if n.startswith("B:")]
                 if len(sellers) > 0 and len(buyers) > 0:
                     pos = nx.shell_layout(G, nlist=[sellers, buyers])
                 else:
-                    st.warning("⚠️ Shell layout requires both sellers and buyers. Using Spring layout instead.")
+                    st.warning("⚠️ El diseño Shell requiere vendedores y compradores. Usando diseño Spring.")
                     pos = nx.spring_layout(G, k=2, iterations=50, seed=42)
         except Exception as e:
-            st.warning(f"⚠️ Error with {layout_type} layout: {str(e)}. Using Spring layout instead.")
+            st.warning(f"⚠️ Error con diseño {layout_type}: {str(e)}. Usando diseño Spring.")
             pos = nx.spring_layout(G, k=2, iterations=50, seed=42)
         
-        # Prepare node data
-        node_x = []
-        node_y = []
-        node_text = []
-        node_hover_text = []
-        node_color = []
-        node_size = []
-        
-        # Calculate metrics per node
+        node_x, node_y, node_text, node_hover_text, node_color, node_size = [], [], [], [], [], []
         node_commission = {}
         node_connections = {}
         
         for _, row in network_data_df.iterrows():
             seller_key = f"S:{row['seller']}"
             buyer_key = f"B:{row['buyer']}"
-            
             node_commission[seller_key] = node_commission.get(seller_key, 0) + row['total_commission']
             node_commission[buyer_key] = node_commission.get(buyer_key, 0) + row['total_commission']
         
         for node in G.nodes():
             node_connections[node] = len(list(G.neighbors(node)))
         
-        # Scale for node sizes
         max_commission = max(node_commission.values()) if node_commission else 1
         max_connections = max(node_connections.values()) if node_connections else 1
         
@@ -1725,40 +1646,31 @@ with tabs[2]:
             node_x.append(x)
             node_y.append(y)
             
-            # Determine node type and details
-            node_type = "Seller" if node.startswith("S:") else "Buyer"
-            node_name = node[2:]  # Remove prefix
+            node_type = "Vendedor" if node.startswith("S:") else "Comprador"
+            node_name = node[2:]
             commission = node_commission.get(node, 0)
             connections = node_connections.get(node, 0)
             
-            # Short label for display
             short_name = node_name[:15] + "..." if len(node_name) > 15 else node_name
             node_text.append(short_name if show_labels else "")
             
-            # Detailed hover text
             node_hover_text.append(
                 f"<b>{node_name}</b><br>"
-                f"Type: {node_type}<br>"
-                f"Commission: ${commission:,.0f}<br>"
-                f"Connections: {connections}<br>"
-                f"Click to highlight"
+                f"Tipo: {node_type}<br>"
+                f"Comisión: ${commission:,.0f}<br>"
+                f"Conexiones: {connections}<br>"
+                f"Haga clic para resaltar"
             )
             
-            # Color
-            if node.startswith("S:"):
-                node_color.append('#E74C3C')  # Red for sellers
-            else:
-                node_color.append('#3498DB')  # Blue for buyers
+            node_color.append('#E74C3C' if node.startswith("S:") else '#3498DB')
             
-            # Size based on selected metric
-            if node_size_metric == "Commission":
+            if node_size_metric == "Comisión":
                 size_value = commission / max_commission if max_commission > 0 else 0.5
-            else:  # Connections
+            else:
                 size_value = connections / max_connections if max_connections > 0 else 0.5
             
             node_size.append(max(15, min(70, size_value * 70)))
         
-        # Prepare edge data with varying thickness and opacity
         edge_traces = []
         max_weight = max([d['weight'] for u, v, d in G.edges(data=True)]) if G.edges() else 1
         max_edge_commission = max([d['commission'] for u, v, d in G.edges(data=True)]) if G.edges() else 1
@@ -1766,107 +1678,57 @@ with tabs[2]:
         for edge in G.edges(data=True):
             x0, y0 = pos[edge[0]]
             x1, y1 = pos[edge[1]]
-            
             weight = edge[2]['weight']
             edge_commission = edge[2]['commission']
-            
-            # Line properties based on metrics
             line_width = max(0.5, min(6, (weight / max_weight) * 6))
             opacity = max(0.2, min(0.8, (edge_commission / max_edge_commission)))
             
             edge_trace = go.Scatter(
-                x=[x0, x1, None],
-                y=[y0, y1, None],
+                x=[x0, x1, None], y=[y0, y1, None],
                 mode='lines',
-                line=dict(
-                    width=line_width,
-                    color=f'rgba(149, 165, 166, {opacity})'
-                ),
+                line=dict(width=line_width, color=f'rgba(149, 165, 166, {opacity})'),
                 hoverinfo='text',
-                text=f"<b>Relationship</b><br>"
-                     f"Transactions: {weight}<br>"
-                     f"Commission: ${edge_commission:,.0f}",
+                text=f"<b>Relación</b><br>Transacciones: {weight}<br>Comisión: ${edge_commission:,.0f}",
                 showlegend=False
             )
             edge_traces.append(edge_trace)
         
-        # Create node trace
         node_trace = go.Scatter(
-            x=node_x,
-            y=node_y,
+            x=node_x, y=node_y,
             mode='markers+text' if show_labels else 'markers',
             hoverinfo='text',
             text=node_text,
             hovertext=node_hover_text,
-            marker=dict(
-                color=node_color,
-                size=node_size,
-                line=dict(width=2, color='white'),
-                opacity=0.9
-            ),
+            marker=dict(color=node_color, size=node_size, line=dict(width=2, color='white'), opacity=0.9),
             textposition="top center",
             textfont=dict(size=8, color='black'),
             showlegend=False
         )
         
-        # Create figure
         fig_network = go.Figure(data=edge_traces + [node_trace])
-        
         fig_network.update_layout(
             title=dict(
-                text=f"🔗 Interactive Buyer-Seller Network (Top {top_n_relationships} Relationships)",
-                font=dict(size=18, color='#2c3e50'),
-                x=0.5,
-                xanchor='center'
+                text=f"🔗 Red Interactiva Compradores-Vendedores (Top {top_n_relationships} Relaciones)",
+                font=dict(size=18, color='#2c3e50'), x=0.5, xanchor='center'
             ),
-            showlegend=False,
-            hovermode='closest',
+            showlegend=False, hovermode='closest',
             margin=dict(b=20, l=5, r=5, t=60),
-            xaxis=dict(
-                showgrid=False, 
-                zeroline=False, 
-                showticklabels=False,
-                fixedrange=False  # Allow zooming
-            ),
-            yaxis=dict(
-                showgrid=False, 
-                zeroline=False, 
-                showticklabels=False,
-                fixedrange=False  # Allow zooming
-            ),
-            plot_bgcolor='#F8F9FA',
-            paper_bgcolor='white',
-            height=750,
-            dragmode='pan',  # Enable panning
+            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False, fixedrange=False),
+            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False, fixedrange=False),
+            plot_bgcolor='#F8F9FA', paper_bgcolor='white', height=750, dragmode='pan',
         )
         
-        # Add zoom buttons
         fig_network.update_layout(
-            updatemenus=[
-                dict(
-                    type="buttons",
-                    direction="left",
-                    buttons=[
-                        dict(
-                            args=[{"xaxis.range": None, "yaxis.range": None}],
-                            label="Reset Zoom",
-                            method="relayout"
-                        )
-                    ],
-                    pad={"r": 10, "t": 10},
-                    showactive=False,
-                    x=0.0,
-                    xanchor="left",
-                    y=1.1,
-                    yanchor="top"
-                ),
-            ]
+            updatemenus=[dict(
+                type="buttons", direction="left",
+                buttons=[dict(args=[{"xaxis.range": None, "yaxis.range": None}], label="Restablecer Zoom", method="relayout")],
+                pad={"r": 10, "t": 10}, showactive=False, x=0.0, xanchor="left", y=1.1, yanchor="top"
+            )]
         )
         
-        st.plotly_chart(fig_network, use_container_width=True)
+        st.plotly_chart(fig_network, width="stretch")
         
-        # Network insights below the map
-        st.markdown("### 📊 Network Analysis")
+        st.markdown("### 📊 Análisis de Red")
         col_ni1, col_ni2, col_ni3, col_ni4 = st.columns(4)
         
         with col_ni1:
@@ -1874,97 +1736,79 @@ with tabs[2]:
             sellers = len([n for n in G.nodes() if n.startswith("S:")])
             buyers = len([n for n in G.nodes() if n.startswith("B:")])
             st.info(f"""
-            **Network Size**
+            **Tamaño de la Red**
             
-            Total Entities: **{total_nodes}**
+            Total Entidades: **{total_nodes}**
             
-            🔴 Sellers: **{sellers}**
+            🔴 Vendedores: **{sellers}**
             
-            🔵 Buyers: **{buyers}**
+            🔵 Compradores: **{buyers}**
             """)
         
         with col_ni2:
-            # Find most connected nodes
             degrees = dict(G.degree())
             most_connected = max(degrees, key=degrees.get)
             most_connected_name = most_connected[2:][:30]
-            most_connected_type = "Seller" if most_connected.startswith("S:") else "Buyer"
+            most_connected_type = "Vendedor" if most_connected.startswith("S:") else "Comprador"
             
             st.success(f"""
-            **Biggest Hub** 🌟
+            **Mayor Nodo Central** 🌟
             
-            Name: **{most_connected_name}**
+            Nombre: **{most_connected_name}**
             
-            Type: **{most_connected_type}**
+            Tipo: **{most_connected_type}**
             
-            Connections: **{degrees[most_connected]}**
+            Conexiones: **{degrees[most_connected]}**
             """)
         
         with col_ni3:
-            # Calculate network density
             density = nx.density(G)
             total_commission = network_data_df['total_commission'].sum()
             
             st.warning(f"""
-            **Network Health** 💪
+            **Salud de la Red** 💪
             
-            Density: **{density:.1%}**
+            Densidad: **{density:.1%}**
             
-            Total Commission: **${total_commission:,.0f}**
+            Comisión Total: **${total_commission:,.0f}**
             
-            Avg Trans/Pair: **{network_data_df['transactions'].mean():.1f}**
+            Prom Trans/Par: **{network_data_df['transactions'].mean():.1f}**
             """)
         
         with col_ni4:
-            # Find potential bridge nodes (high betweenness centrality)
             if len(G.nodes()) > 2:
                 betweenness = nx.betweenness_centrality(G)
                 bridge_node = max(betweenness, key=betweenness.get)
                 bridge_name = bridge_node[2:][:30]
-                bridge_type = "Seller" if bridge_node.startswith("S:") else "Buyer"
+                bridge_type = "Vendedor" if bridge_node.startswith("S:") else "Comprador"
                 
                 st.error(f"""
-                **Key Bridge** 🌉
+                **Nodo Puente Clave** 🌉
                 
-                Name: **{bridge_name}**
+                Nombre: **{bridge_name}**
                 
-                Type: **{bridge_type}**
+                Tipo: **{bridge_type}**
                 
-                Centrality: **{betweenness[bridge_node]:.3f}**
+                Centralidad: **{betweenness[bridge_node]:.3f}**
                 """)
             else:
-                st.error("**Key Bridge** 🌉\n\nNeed more nodes for analysis")
+                st.error("**Nodo Puente Clave** 🌉\n\nSe necesitan más nodos para el análisis")
         
-        # Top Hubs Table
-        st.markdown("### 🎯 Top Network Hubs")
+        st.markdown("### 🎯 Principales Nodos Centrales de la Red")
         hub_data = []
         for node in G.nodes():
-            node_type = "Seller" if node.startswith("S:") else "Buyer"
+            node_type = "Vendedor" if node.startswith("S:") else "Comprador"
             node_name = node[2:]
             commission = node_commission.get(node, 0)
             connections = node_connections.get(node, 0)
-            
-            hub_data.append({
-                'Name': node_name,
-                'Type': node_type,
-                'Connections': connections,
-                'Commission': commission
-            })
+            hub_data.append({'Nombre': node_name, 'Tipo': node_type, 'Conexiones': connections, 'Comisión': commission})
         
-        hub_df = pd.DataFrame(hub_data).sort_values('Connections', ascending=False).head(10)
-        
-        st.dataframe(
-            hub_df.style.format({
-                'Connections': '{:.0f}',
-                'Commission': '${:,.0f}'
-            }),
-            use_container_width=True
-        )
+        hub_df = pd.DataFrame(hub_data).sort_values('Conexiones', ascending=False).head(10)
+        st.dataframe(hub_df.style.format({'Conexiones': '{:.0f}', 'Comisión': '${:,.0f}'}), width="stretch")
         
     else:
-        st.info("Not enough relationship data to create network visualization. Need at least 10 buyer-seller relationships.")
+        st.info("No hay suficientes datos de relaciones para crear la visualización de red. Se necesitan al menos 10 relaciones comprador-vendedor.")
     
-    # Simple network metrics
     network_metrics_where = filter_query + (" AND " if filter_query else "WHERE ") + '"NOMBRE VENDEDOR" IS NOT NULL AND "NOMBRE COMPRADOR" IS NOT NULL'
     network_metrics_query = f"""
         SELECT 
@@ -1973,47 +1817,41 @@ with tabs[2]:
             COUNT(DISTINCT "NOMBRE VENDEDOR" || '-' || "NOMBRE COMPRADOR") as unique_relationships,
             AVG(transaction_count) as avg_transactions_per_relationship
         FROM (
-            SELECT 
-                "NOMBRE VENDEDOR",
-                "NOMBRE COMPRADOR",
-                COUNT(*) as transaction_count
+            SELECT "NOMBRE VENDEDOR", "NOMBRE COMPRADOR", COUNT(*) as transaction_count
             FROM operaciones_bmc
             {network_metrics_where}
             GROUP BY "NOMBRE VENDEDOR", "NOMBRE COMPRADOR"
         ) relationships
     """
     
-    network_metrics_df = safe_query(network_metrics_query, "network metrics")
+    network_metrics_df = safe_query(network_metrics_query, "métricas de red")
     
     if not network_metrics_df.empty:
         col_nm1, col_nm2, col_nm3, col_nm4 = st.columns(4)
-        
         with col_nm1:
-            st.metric("Unique Sellers", f"{int(network_metrics_df['unique_sellers'][0]):,}")
+            st.metric("Vendedores Únicos", f"{int(network_metrics_df['unique_sellers'][0]):,}")
         with col_nm2:
-            st.metric("Unique Buyers", f"{int(network_metrics_df['unique_buyers'][0]):,}")
+            st.metric("Compradores Únicos", f"{int(network_metrics_df['unique_buyers'][0]):,}")
         with col_nm3:
-            st.metric("Unique Relationships", f"{int(network_metrics_df['unique_relationships'][0]):,}")
+            st.metric("Relaciones Únicas", f"{int(network_metrics_df['unique_relationships'][0]):,}")
         with col_nm4:
-            st.metric("Avg Trans/Relationship", f"{network_metrics_df['avg_transactions_per_relationship'][0]:.1f}")
+            st.metric("Prom Trans/Relación", f"{network_metrics_df['avg_transactions_per_relationship'][0]:.1f}")
 
-# --- TAB 4: CLIENT INSIGHTS ---
+# --- PESTAÑA 4: PERSPECTIVAS DEL CLIENTE ---
 with tabs[3]:
-    st.header("👥 Client Value Insights - How This Data Helps YOUR Clients")
+    st.header("👥 Perspectivas del Cliente - Cómo Estos Datos Ayudan a SUS Clientes")
     
     st.markdown("""
     <div style='background-color: #e8f4f8; padding: 20px; border-radius: 10px; margin-bottom: 20px;'>
-    <h3>💡 Why Clients Pay You Commissions</h3>
-    <p><b>Clients don't just pay for registration - they pay for INSIGHTS and VALUE!</b></p>
-    <p>This tab shows how the data YOU collect helps YOUR clients make better business decisions, 
-    justifying the commissions they pay you. Use these insights in client meetings to demonstrate your value.</p>
+    <h3>💡 Por Qué los Clientes le Pagan Comisiones</h3>
+    <p><b>¡Los clientes no solo pagan por el registro - pagan por PERSPECTIVAS y VALOR!</b></p>
+    <p>Esta pestaña muestra cómo los datos que USTED recopila ayudan a SUS clientes a tomar mejores decisiones,
+    justificando las comisiones que le pagan. Use estas perspectivas en reuniones con clientes para demostrar su valor.</p>
     </div>
     """, unsafe_allow_html=True)
     
-    # Client selector
-    st.markdown("### 🎯 Select a Client to Analyze")
+    st.markdown("### 🎯 Seleccione un Cliente para Analizar")
     
-    # Get list of clients
     client_list_where = filter_query + (" AND " if filter_query else "WHERE ") + 'CLIENTE IS NOT NULL AND "CC PPAL" IS NOT NULL'
     client_list_query = f"""
         SELECT DISTINCT CLIENTE as client_name, "CC PPAL" as client_nit
@@ -2022,26 +1860,23 @@ with tabs[3]:
         ORDER BY CLIENTE
     """
     
-    with st.expander("🔍 View Client List SQL Query", expanded=False):
+    with st.expander("🔍 Ver Consulta SQL de Lista de Clientes", expanded=False):
         st.code(client_list_query, language="sql")
-        st.caption("This query retrieves all unique clients who can be analyzed")
+        st.caption("Esta consulta recupera todos los clientes únicos que pueden ser analizados")
     
-    client_list_df = safe_query(client_list_query, "client list")
+    client_list_df = safe_query(client_list_query, "lista de clientes")
     
     if not client_list_df.empty:
         selected_client = st.selectbox(
-            "Choose a client to see their insights:",
+            "Elija un cliente para ver sus perspectivas:",
             options=client_list_df['client_name'].tolist(),
-            help="Select a client to see how the data benefits them"
+            help="Seleccione un cliente para ver cómo los datos le benefician"
         )
         
-        # Get client NIT
         client_nit = client_list_df[client_list_df['client_name'] == selected_client]['client_nit'].values[0]
         
-        # Client Overview
-        st.markdown(f"## 📊 Insights for: {selected_client}")
+        st.markdown(f"## 📊 Perspectivas para: {selected_client}")
         
-        # Get client stats
         client_stats_query = f"""
             SELECT 
                 COUNT(*) as total_transactions,
@@ -2056,11 +1891,11 @@ with tabs[3]:
             WHERE "CC PPAL" = '{client_nit}'
         """
         
-        with st.expander("🔍 View Client Stats SQL Query", expanded=False):
+        with st.expander("🔍 Ver Consulta SQL de Estadísticas del Cliente", expanded=False):
             st.code(client_stats_query, language="sql")
-            st.caption("This query retrieves comprehensive statistics for the selected client")
+            st.caption("Esta consulta recupera estadísticas completas para el cliente seleccionado")
         
-        client_stats_df = safe_query(client_stats_query, "client stats")
+        client_stats_df = safe_query(client_stats_query, "estadísticas del cliente")
         
         if not client_stats_df.empty:
             stats = client_stats_df.iloc[0]
@@ -2068,38 +1903,35 @@ with tabs[3]:
             col_cs1, col_cs2, col_cs3, col_cs4 = st.columns(4)
             
             with col_cs1:
-                st.metric("Total Transactions", f"{int(stats['total_transactions']):,}")
+                st.metric("Total Transacciones", f"{int(stats['total_transactions']):,}")
             with col_cs2:
-                st.metric("Business Volume", f"${stats['total_volume']:,.0f}")
+                st.metric("Volumen de Negocio", f"${stats['total_volume']:,.0f}")
             with col_cs3:
-                st.metric("Commission Paid", f"${stats['total_commission_paid']:,.0f}")
+                st.metric("Comisión Pagada", f"${stats['total_commission_paid']:,.0f}")
             with col_cs4:
-                st.metric("Avg Rate", f"{stats['avg_commission_rate']:.2f}%")
+                st.metric("Tasa Promedio", f"{stats['avg_commission_rate']:.2f}%")
             
-            # Value Propositions
             st.markdown("---")
-            st.markdown("### 💎 Value YOU Provide to This Client")
+            st.markdown("### 💎 Valor que USTED Aporta a Este Cliente")
             
             tab_val1, tab_val2, tab_val3, tab_val4 = st.tabs([
-                "🎯 Market Intelligence",
-                "📈 Performance Tracking", 
-                "🤝 Partner Analysis",
-                "💰 Cost Optimization"
+                "🎯 Inteligencia de Mercado",
+                "📈 Seguimiento de Desempeño", 
+                "🤝 Análisis de Socios",
+                "💰 Optimización de Costos"
             ])
             
-            # TAB 1: Market Intelligence
             with tab_val1:
-                st.subheader("🎯 Market Intelligence Insights")
+                st.subheader("🎯 Perspectivas de Inteligencia de Mercado")
                 st.markdown("""
-                **What you provide:** Real-time market data and benchmarking
+                **Lo que usted provee:** Datos de mercado en tiempo real y comparativas
                 
-                **Client benefits:**
-                - See industry pricing trends
-                - Compare their rates to market averages
-                - Identify competitive advantages
+                **Beneficios para el cliente:**
+                - Ver tendencias de precios de la industria
+                - Comparar sus tarifas con promedios del mercado
+                - Identificar ventajas competitivas
                 """)
                 
-                # Market comparison
                 market_comparison_query = f"""
                     SELECT 
                         "NOMBRE PRODUCTO",
@@ -2115,20 +1947,19 @@ with tabs[3]:
                     LIMIT 10
                 """
                 
-                with st.expander("🔍 View Market Comparison SQL Query", expanded=False):
+                with st.expander("🔍 Ver Consulta SQL de Comparativa de Mercado", expanded=False):
                     st.code(market_comparison_query, language="sql")
-                    st.caption("Compares client's commission rates vs market averages by product")
+                    st.caption("Compara las tarifas de comisión del cliente vs promedios del mercado por producto")
                 
-                market_comp_df = safe_query(market_comparison_query, "market comparison")
+                market_comp_df = safe_query(market_comparison_query, "comparativa de mercado")
                 
                 if not market_comp_df.empty:
-                    st.markdown("**📊 Your Product Performance vs Market**")
+                    st.markdown("**📊 Desempeño de Sus Productos vs Mercado**")
                     
-                    # Add comparison indicator
                     market_comp_df['vs_market'] = market_comp_df.apply(
-                        lambda row: '🟢 Below Market' if row['client_rate'] < row['market_avg_rate'] 
-                        else '🔴 Above Market' if row['client_rate'] > row['market_avg_rate']
-                        else '🟡 At Market', axis=1
+                        lambda row: '🟢 Por Debajo del Mercado' if row['client_rate'] < row['market_avg_rate'] 
+                        else '🔴 Por Encima del Mercado' if row['client_rate'] > row['market_avg_rate']
+                        else '🟡 En el Mercado', axis=1
                     )
                     
                     st.dataframe(
@@ -2137,29 +1968,27 @@ with tabs[3]:
                             'client_rate': '{:.2f}%',
                             'market_avg_rate': '{:.2f}%'
                         }),
-                        use_container_width=True
+                        width="stretch"
                     )
                     
                     st.success("""
-                    💡 **Value Delivered:** 
-                    - Client can see if they're paying competitive rates
-                    - Identify products where they can negotiate better prices
-                    - Spot market trends before competitors
+                    💡 **Valor Entregado:** 
+                    - El cliente puede ver si está pagando tarifas competitivas
+                    - Identificar productos donde puede negociar mejores precios
+                    - Detectar tendencias del mercado antes que los competidores
                     """)
             
-            # TAB 2: Performance Tracking
             with tab_val2:
-                st.subheader("📈 Performance Tracking")
+                st.subheader("📈 Seguimiento de Desempeño")
                 st.markdown("""
-                **What you provide:** Historical data and trend analysis
+                **Lo que usted provee:** Datos históricos y análisis de tendencias
                 
-                **Client benefits:**
-                - Track business growth over time
-                - Identify seasonal patterns
-                - Make data-driven decisions
+                **Beneficios para el cliente:**
+                - Seguir el crecimiento del negocio en el tiempo
+                - Identificar patrones estacionales
+                - Tomar decisiones basadas en datos
                 """)
                 
-                # Monthly trend for client
                 client_trend_query = f"""
                     SELECT 
                         MES,
@@ -2171,81 +2000,62 @@ with tabs[3]:
                     GROUP BY MES
                     ORDER BY 
                         CASE 
-                            WHEN MES LIKE 'ene%' THEN 1
-                            WHEN MES LIKE 'feb%' THEN 2
-                            WHEN MES LIKE 'mar%' THEN 3
-                            WHEN MES LIKE 'abr%' THEN 4
-                            WHEN MES LIKE 'may%' THEN 5
-                            WHEN MES LIKE 'jun%' THEN 6
-                            WHEN MES LIKE 'jul%' THEN 7
-                            WHEN MES LIKE 'ago%' THEN 8
-                            WHEN MES LIKE 'sep%' THEN 9
-                            WHEN MES LIKE 'oct%' THEN 10
-                            WHEN MES LIKE 'nov%' THEN 11
-                            WHEN MES LIKE 'dic%' THEN 12
+                            WHEN MES LIKE 'ene%' THEN 1 WHEN MES LIKE 'feb%' THEN 2
+                            WHEN MES LIKE 'mar%' THEN 3 WHEN MES LIKE 'abr%' THEN 4
+                            WHEN MES LIKE 'may%' THEN 5 WHEN MES LIKE 'jun%' THEN 6
+                            WHEN MES LIKE 'jul%' THEN 7 WHEN MES LIKE 'ago%' THEN 8
+                            WHEN MES LIKE 'sep%' THEN 9 WHEN MES LIKE 'oct%' THEN 10
+                            WHEN MES LIKE 'nov%' THEN 11 WHEN MES LIKE 'dic%' THEN 12
                             ELSE 0
                         END
                 """
                 
-                with st.expander("🔍 View Client Trend SQL Query", expanded=False):
+                with st.expander("🔍 Ver Consulta SQL de Tendencia del Cliente", expanded=False):
                     st.code(client_trend_query, language="sql")
-                    st.caption("Shows client's monthly business activity over time")
+                    st.caption("Muestra la actividad comercial mensual del cliente en el tiempo")
                 
-                client_trend_df = safe_query(client_trend_query, "client trend")
+                client_trend_df = safe_query(client_trend_query, "tendencia del cliente")
                 
                 if not client_trend_df.empty:
                     fig_client_trend = go.Figure()
-                    
                     fig_client_trend.add_trace(go.Scatter(
-                        x=client_trend_df['MES'],
-                        y=client_trend_df['volume'],
-                        mode='lines+markers',
-                        name='Business Volume',
-                        line=dict(color='#3498DB', width=3),
-                        yaxis='y'
+                        x=client_trend_df['MES'], y=client_trend_df['volume'],
+                        mode='lines+markers', name='Volumen de Negocio',
+                        line=dict(color='#3498DB', width=3), yaxis='y'
                     ))
-                    
                     fig_client_trend.add_trace(go.Bar(
-                        x=client_trend_df['MES'],
-                        y=client_trend_df['transactions'],
-                        name='Transactions',
-                        marker_color='#95A5A6',
-                        yaxis='y2'
+                        x=client_trend_df['MES'], y=client_trend_df['transactions'],
+                        name='Transacciones', marker_color='#95A5A6', yaxis='y2'
                     ))
-                    
                     fig_client_trend.update_layout(
-                        title="Your Business Activity Over Time",
-                        xaxis_title="Month",
-                        yaxis=dict(title="Business Volume ($)", side='left'),
-                        yaxis2=dict(title="Number of Transactions", overlaying='y', side='right'),
-                        hovermode='x unified',
-                        height=400
+                        title="Su Actividad Comercial en el Tiempo",
+                        xaxis_title="Mes",
+                        yaxis=dict(title="Volumen de Negocio ($)", side='left'),
+                        yaxis2=dict(title="Número de Transacciones", overlaying='y', side='right'),
+                        hovermode='x unified', height=400
                     )
-                    
-                    st.plotly_chart(fig_client_trend, use_container_width=True)
+                    st.plotly_chart(fig_client_trend, width="stretch")
                     
                     st.success("""
-                    💡 **Value Delivered:**
-                    - Clear visibility into business growth/decline
-                    - Identify peak seasons for better planning
-                    - Historical data for financial forecasting
+                    💡 **Valor Entregado:**
+                    - Visibilidad clara del crecimiento/declive del negocio
+                    - Identificar temporadas pico para mejor planificación
+                    - Datos históricos para proyecciones financieras
                     """)
             
-            # TAB 3: Partner Analysis
             with tab_val3:
-                st.subheader("🤝 Trading Partner Analysis")
+                st.subheader("🤝 Análisis de Socios Comerciales")
                 st.markdown("""
-                **What you provide:** Detailed partner relationship insights
+                **Lo que usted provee:** Perspectivas detalladas de relaciones con socios
                 
-                **Client benefits:**
-                - Identify most important trading partners
-                - Spot relationship risks
-                - Discover new partnership opportunities
+                **Beneficios para el cliente:**
+                - Identificar los socios comerciales más importantes
+                - Detectar riesgos en las relaciones
+                - Descubrir nuevas oportunidades de alianza
                 """)
                 
-                # Top partners
                 if stats['unique_buyers'] > 0:
-                    st.markdown("**🔵 Your Top Buyers**")
+                    st.markdown("**🔵 Sus Principales Compradores**")
                     top_buyers_query = f"""
                         SELECT 
                             "NOMBRE COMPRADOR" as partner,
@@ -2259,23 +2069,20 @@ with tabs[3]:
                         LIMIT 10
                     """
                     
-                    with st.expander("🔍 View Top Buyers SQL Query", expanded=False):
+                    with st.expander("🔍 Ver Consulta SQL de Principales Compradores", expanded=False):
                         st.code(top_buyers_query, language="sql")
-                        st.caption("Shows client's top buyers when they act as seller")
+                        st.caption("Muestra los principales compradores del cliente cuando actúa como vendedor")
                     
-                    top_buyers_df = safe_query(top_buyers_query, "top buyers")
+                    top_buyers_df = safe_query(top_buyers_query, "principales compradores")
                     
                     if not top_buyers_df.empty:
                         st.dataframe(
-                            top_buyers_df.style.format({
-                                'transactions': '{:.0f}',
-                                'total_volume': '${:,.0f}'
-                            }),
-                            use_container_width=True
+                            top_buyers_df.style.format({'transactions': '{:.0f}', 'total_volume': '${:,.0f}'}),
+                            width="stretch"
                         )
                 
                 if stats['unique_sellers'] > 0:
-                    st.markdown("**🔴 Your Top Suppliers**")
+                    st.markdown("**🔴 Sus Principales Proveedores**")
                     top_sellers_query = f"""
                         SELECT 
                             "NOMBRE VENDEDOR" as partner,
@@ -2289,41 +2096,36 @@ with tabs[3]:
                         LIMIT 10
                     """
                     
-                    with st.expander("🔍 View Top Sellers SQL Query", expanded=False):
+                    with st.expander("🔍 Ver Consulta SQL de Principales Proveedores", expanded=False):
                         st.code(top_sellers_query, language="sql")
-                        st.caption("Shows client's top suppliers when they act as buyer")
+                        st.caption("Muestra los principales proveedores del cliente cuando actúa como comprador")
                     
-                    top_sellers_df = safe_query(top_sellers_query, "top sellers")
+                    top_sellers_df = safe_query(top_sellers_query, "principales proveedores")
                     
                     if not top_sellers_df.empty:
                         st.dataframe(
-                            top_sellers_df.style.format({
-                                'transactions': '{:.0f}',
-                                'total_volume': '${:,.0f}'
-                            }),
-                            use_container_width=True
+                            top_sellers_df.style.format({'transactions': '{:.0f}', 'total_volume': '${:,.0f}'}),
+                            width="stretch"
                         )
                 
                 st.success("""
-                💡 **Value Delivered:**
-                - Know who your most important partners are
-                - Track partner reliability and consistency
-                - Identify concentration risk (too dependent on one partner)
+                💡 **Valor Entregado:**
+                - Conozca quiénes son sus socios más importantes
+                - Siga la confiabilidad y consistencia de los socios
+                - Identifique el riesgo de concentración (demasiada dependencia de un socio)
                 """)
             
-            # TAB 4: Cost Optimization
             with tab_val4:
-                st.subheader("💰 Cost Optimization Opportunities")
+                st.subheader("💰 Oportunidades de Optimización de Costos")
                 st.markdown("""
-                **What you provide:** Tax benefit maximization insights
+                **Lo que usted provee:** Perspectivas de maximización de beneficios tributarios
                 
-                **Client benefits:**
-                - Understand registration costs vs benefits
-                - Identify cost-saving opportunities
-                - Maximize tax deductions
+                **Beneficios para el cliente:**
+                - Entender costos de registro vs beneficios
+                - Identificar oportunidades de ahorro
+                - Maximizar deducciones tributarias
                 """)
                 
-                # Cost breakdown
                 cost_breakdown_query = f"""
                     SELECT 
                         YEAR,
@@ -2337,14 +2139,14 @@ with tabs[3]:
                     ORDER BY YEAR DESC
                 """
                 
-                with st.expander("🔍 View Cost Breakdown SQL Query", expanded=False):
+                with st.expander("🔍 Ver Consulta SQL de Desglose de Costos", expanded=False):
                     st.code(cost_breakdown_query, language="sql")
-                    st.caption("Shows annual commission costs and ROI analysis for the client")
+                    st.caption("Muestra costos anuales de comisión y análisis de ROI para el cliente")
                 
-                cost_breakdown_df = safe_query(cost_breakdown_query, "cost breakdown")
+                cost_breakdown_df = safe_query(cost_breakdown_query, "desglose de costos")
                 
                 if not cost_breakdown_df.empty:
-                    st.markdown("**📊 Annual Cost Analysis**")
+                    st.markdown("**📊 Análisis Anual de Costos**")
                     st.dataframe(
                         cost_breakdown_df.style.format({
                             'commission_paid': '${:,.0f}',
@@ -2352,124 +2154,119 @@ with tabs[3]:
                             'transactions': '{:.0f}',
                             'effective_rate': '{:.2f}%'
                         }),
-                        use_container_width=True
+                        width="stretch"
                     )
                     
                     total_commission = cost_breakdown_df['commission_paid'].sum()
                     total_volume = cost_breakdown_df['volume'].sum()
-                    
-                    # Tax benefit estimation (simplified)
-                    estimated_tax_benefit = total_volume * 0.15  # Assuming 15% tax savings
+                    estimated_tax_benefit = total_volume * 0.15
                     net_benefit = estimated_tax_benefit - total_commission
                     
                     col_cb1, col_cb2, col_cb3 = st.columns(3)
-                    
                     with col_cb1:
-                        st.metric("Total Paid", f"${total_commission:,.0f}")
+                        st.metric("Total Pagado", f"${total_commission:,.0f}")
                     with col_cb2:
-                        st.metric("Est. Tax Benefit", f"${estimated_tax_benefit:,.0f}")
+                        st.metric("Beneficio Tributario Est.", f"${estimated_tax_benefit:,.0f}")
                     with col_cb3:
-                        st.metric("Net Benefit", f"${net_benefit:,.0f}", 
+                        st.metric("Beneficio Neto", f"${net_benefit:,.0f}", 
                                  delta=f"{((net_benefit/total_commission)*100):.0f}% ROI")
                     
                     st.success("""
-                    💡 **Value Delivered:**
-                    - Clear ROI on registration costs
-                    - Track commission payments vs tax savings
-                    - Justify registration expenses to finance team
-                    - Historical data for tax filing
+                    💡 **Valor Entregado:**
+                    - ROI claro sobre los costos de registro
+                    - Seguimiento de pagos de comisión vs ahorro tributario
+                    - Justificar gastos de registro al equipo financiero
+                    - Datos históricos para declaración de impuestos
                     """)
             
-            # Summary Value Proposition
             st.markdown("---")
-            st.markdown("### 🎁 Complete Value Package")
+            st.markdown("### 🎁 Paquete Completo de Valor")
             
-            st.markdown("""
+            st.markdown(f"""
             <div style='background-color: #d4edda; padding: 20px; border-radius: 10px; border-left: 5px solid #28a745;'>
-            <h4>Why Clients Should Keep Paying Commissions:</h4>
+            <h4>Por Qué los Clientes Deberían Seguir Pagando Comisiones:</h4>
             
-            <p><b>1. Market Intelligence</b> 💹<br>
-            → Real-time pricing data worth thousands in consulting fees<br>
-            → Competitive benchmarking unavailable elsewhere</p>
+            <p><b>1. Inteligencia de Mercado</b> 💹<br>
+            → Datos de precios en tiempo real por valor de miles en honorarios de consultoría<br>
+            → Comparativas competitivas no disponibles en otro lugar</p>
             
-            <p><b>2. Business Analytics</b> 📊<br>
-            → Historical tracking and trend analysis<br>
-            → Performance dashboards for better decisions<br>
-            → Data-driven insights for growth</p>
+            <p><b>2. Analítica de Negocio</b> 📊<br>
+            → Seguimiento histórico y análisis de tendencias<br>
+            → Tableros de desempeño para mejores decisiones<br>
+            → Perspectivas basadas en datos para el crecimiento</p>
             
-            <p><b>3. Relationship Management</b> 🤝<br>
-            → Partner performance tracking<br>
-            → Risk identification (concentration, churn)<br>
-            → Network effect from ecosystem insights</p>
+            <p><b>3. Gestión de Relaciones</b> 🤝<br>
+            → Seguimiento del desempeño de socios<br>
+            → Identificación de riesgos (concentración, fuga)<br>
+            → Efecto de red de perspectivas del ecosistema</p>
             
-            <p><b>4. Cost Savings</b> 💰<br>
-            → Tax benefits far exceed commission costs<br>
-            → ROI tracking and documentation<br>
-            → Compliance and audit trail</p>
+            <p><b>4. Ahorro de Costos</b> 💰<br>
+            → Los beneficios tributarios superan ampliamente los costos de comisión<br>
+            → Seguimiento y documentación del ROI<br>
+            → Trazabilidad de cumplimiento y auditoría</p>
             
-            <p><b>5. Time Savings</b> ⏰<br>
-            → You handle all BMC paperwork<br>
-            → Automated reporting<br>
-            → One-stop solution</p>
+            <p><b>5. Ahorro de Tiempo</b> ⏰<br>
+            → Usted maneja todos los trámites de BMC<br>
+            → Reportes automatizados<br>
+            → Solución integral</p>
             
             <hr>
             
-            <p><b>Bottom Line:</b> Clients pay ~{stats['avg_commission_rate']:.2f}% commission but receive:</p>
+            <p><b>Conclusión:</b> Los clientes pagan ~{stats['avg_commission_rate']:.2f}% de comisión pero reciben:</p>
             <ul>
-            <li>✅ 15%+ tax benefits</li>
-            <li>✅ Market intelligence worth $$$</li>
-            <li>✅ Business analytics platform</li>
-            <li>✅ Complete compliance management</li>
+            <li>✅ Beneficios tributarios del 15%+</li>
+            <li>✅ Inteligencia de mercado por valor de $$$</li>
+            <li>✅ Plataforma de analítica de negocio</li>
+            <li>✅ Gestión integral de cumplimiento</li>
             </ul>
             
             <p style='font-size: 18px; font-weight: bold; color: #28a745;'>
-            Net Value: 10x-20x the commission cost!
+            ¡Valor Neto: 10x-20x el costo de la comisión!
             </p>
             </div>
             """, unsafe_allow_html=True)
             
             st.info("""
-            💡 **How to use this tab:**
-            1. Select client before meetings
-            2. Review their specific insights
-            3. Show them the value THEY receive
-            4. Use data to justify commission rates
-            5. Demonstrate continuous value delivery
+            💡 **Cómo usar esta pestaña:**
+            1. Seleccione el cliente antes de las reuniones
+            2. Revise sus perspectivas específicas
+            3. Muéstreles el valor que ELLOS reciben
+            4. Use datos para justificar las tarifas de comisión
+            5. Demuestre la entrega continua de valor
             """)
         
         else:
-            st.warning("No data found for this client.")
+            st.warning("No se encontraron datos para este cliente.")
     else:
-        st.info("No clients found in selected date range.")
+        st.info("No se encontraron clientes en el rango de fechas seleccionado.")
 
-# --- TAB 5: OPERATIONAL ANALYSIS ---
+# --- PESTAÑA 5: ANÁLISIS OPERATIVO ---
 with tabs[4]:
-    st.header("🔍 Operational Deep-Dive")
+    st.header("🔍 Análisis Operativo Detallado")
     
-    # Day of week analysis
     col_op1, col_op2 = st.columns(2)
     
     with col_op1:
-        st.subheader("📅 Daily Operation Patterns")
+        st.subheader("📅 Patrones de Operaciones Diarias")
         
-        with st.expander("ℹ️ What does this show?", expanded=False):
+        with st.expander("ℹ️ ¿Qué muestra esto?", expanded=False):
             st.markdown("""
-            **Business Question:** Which days of the week are busiest?
+            **Pregunta de Negocio:** ¿Qué días de la semana están más ocupados?
             
-            **What we're measuring:**
-            - Number of operations per day of the week
-            - Commission earned each day
-            - Average commission per day
+            **Qué estamos midiendo:**
+            - Número de operaciones por día de la semana
+            - Comisión ganada cada día
+            - Comisión promedio por día
             
-            **Why it matters:**
-            - Plan staffing levels for busy days
-            - Schedule maintenance during slow days
-            - Understand weekly business rhythms
+            **Por qué importa:**
+            - Planificar niveles de personal para días ocupados
+            - Programar mantenimiento durante días lentos
+            - Entender los ritmos semanales del negocio
             
-            **How to use it:**
-            - Ensure adequate staff on high-volume days
-            - Plan meetings and training on slower days
-            - Adjust working hours based on demand patterns
+            **Cómo usarlo:**
+            - Asegure personal adecuado en días de alto volumen
+            - Planifique reuniones y capacitaciones en días más lentos
+            - Ajuste los horarios según los patrones de demanda
             """)
         
         dow_query = f"""
@@ -2483,56 +2280,63 @@ with tabs[4]:
             GROUP BY day_of_week
         """
         
-        with st.expander("🔍 View SQL Query", expanded=False):
+        with st.expander("🔍 Ver Consulta SQL", expanded=False):
             st.code(dow_query, language="sql")
         
-        dow_df = safe_query(dow_query, "day of week analysis")
+        dow_df = safe_query(dow_query, "análisis por día de semana")
         
         if not dow_df.empty:
-            # Order days properly
             day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-            dow_df['day_of_week'] = pd.Categorical(dow_df['day_of_week'], categories=day_order, ordered=True)
-            dow_df = dow_df.sort_values('day_of_week')
+            # Use a temporary sort key to order by day of week, then drop it
+            dow_df['_sort_key'] = pd.Categorical(dow_df['day_of_week'].astype(str), categories=day_order, ordered=True)
+            dow_df = dow_df.sort_values('_sort_key').drop(columns=['_sort_key'])
+            
+            day_translation = {
+                'Monday': 'Lunes', 'Tuesday': 'Martes', 'Wednesday': 'Miércoles',
+                'Thursday': 'Jueves', 'Friday': 'Viernes', 'Saturday': 'Sábado', 'Sunday': 'Domingo'
+            }
+            # Convert to plain string before mapping to avoid Categorical assignment error
+            dow_df['day_of_week'] = dow_df['day_of_week'].astype(str).map(day_translation).fillna(dow_df['day_of_week'].astype(str))
             
             fig_dow = px.bar(
                 dow_df,
                 x='day_of_week',
                 y='operations',
-                title='Operations by Day of Week',
-                labels={'operations': 'Number of Operations', 'day_of_week': 'Day'},
+                title='Operaciones por Día de la Semana',
+                labels={'operations': 'Número de Operaciones', 'day_of_week': 'Día'},
                 color='operations',
                 color_continuous_scale='Viridis'
             )
             fig_dow.update_traces(
-                hovertemplate='<b>%{x}</b><br>Operations: %{y}<br>Commission: $%{customdata[0]:,.0f}<extra></extra>',
+                hovertemplate='<b>%{x}</b><br>Operaciones: %{y}<br>Comisión: $%{customdata[0]:,.0f}<extra></extra>',
                 customdata=dow_df[['commission_earnings']]
             )
-            st.plotly_chart(fig_dow, use_container_width=True)
-            st.caption("💡 Optimize staffing based on peak days")
+            st.plotly_chart(fig_dow, width="stretch")
+            st.caption("💡 Optimice el personal según los días pico")
         else:
-            st.info("No data for day of week analysis")
+            st.info("No hay datos para el análisis por día de semana")
     
     with col_op2:
-        st.subheader("🏭 Operations by Type")
+        st.subheader("🏭 Operaciones por Tipo")
         
-        with st.expander("ℹ️ What does this show?", expanded=False):
+        with st.expander("ℹ️ ¿Qué muestra esto?", expanded=False):
             st.markdown("""
-            **Business Question:** What types of operations are we processing?
+            **Pregunta de Negocio:** ¿Qué tipos de operaciones estamos procesando?
             
-            **What we're measuring:**
-            - Distribution of operation types:
-              - **RSG**: Registro sin incentivo (Registration without incentive)
-              - **REX**: Registro exportación (Export registration)
-              - **RGC**: Registro con incentivo (Registration with incentive)
-            - Number of operations per type
-            - Commission earned per type
+            **Qué estamos midiendo:**
+            - Distribución de tipos de operación:
+              - **RSG**: Registro sin incentivo
+              - **REX**: Registro exportación
+              - **RGC**: Registro con incentivo
+            - Número de operaciones por tipo
+            - Comisión ganada por tipo
             
-            **Why it matters:**
-            - Understand your business mix
-            - Identify which operation types are most profitable
-            - Plan resources for different operation types
+            **Por qué importa:**
+            - Entender la mezcla de negocios
+            - Identificar qué tipos son más rentables
+            - Planificar recursos para diferentes tipos
             
-            **How to use it:** Focus on growing the most profitable operation types while ensuring you have capacity for all types.
+            **Cómo usarlo:** Enfóquese en crecer los tipos más rentables mientras asegura capacidad para todos.
             """)
         
         op_type_query = f"""
@@ -2547,57 +2351,56 @@ with tabs[4]:
             ORDER BY operations DESC
         """
         
-        with st.expander("🔍 View SQL Query", expanded=False):
+        with st.expander("🔍 Ver Consulta SQL", expanded=False):
             st.code(op_type_query, language="sql")
         
-        op_type_df = safe_query(op_type_query, "operation type analysis")
+        op_type_df = safe_query(op_type_query, "análisis por tipo de operación")
         
         if not op_type_df.empty:
             fig_op_type = px.pie(
                 op_type_df,
                 values='operations',
                 names='TIPO OPERACION',
-                title='Distribution by Operation Type',
+                title='Distribución por Tipo de Operación',
                 hole=0.3
             )
             fig_op_type.update_traces(
-                hovertemplate='<b>%{label}</b><br>Operations: %{value}<br>Commission: $%{customdata[0]:,.0f}<extra></extra>',
+                hovertemplate='<b>%{label}</b><br>Operaciones: %{value}<br>Comisión: $%{customdata[0]:,.0f}<extra></extra>',
                 customdata=op_type_df[['commission_earnings']]
             )
-            st.plotly_chart(fig_op_type, use_container_width=True)
+            st.plotly_chart(fig_op_type, width="stretch")
         else:
-            st.info("No operation type data available")
+            st.info("No hay datos de tipo de operación disponibles")
     
-    # Geographic analysis
     st.markdown("---")
-    st.subheader("🗺️ Geographic Distribution")
+    st.subheader("🗺️ Distribución Geográfica")
     
-    with st.expander("ℹ️ What does this show?", expanded=False):
+    with st.expander("ℹ️ ¿Qué muestra esto?", expanded=False):
         st.markdown("""
-        **Business Question:** Where are our buyers and sellers located?
+        **Pregunta de Negocio:** ¿Dónde están ubicados nuestros compradores y vendedores?
         
-        **What we're measuring:**
-        - Top cities where buyers are located
-        - Top cities where sellers are located
-        - Number of operations per city
-        - Commission earned per city
+        **Qué estamos midiendo:**
+        - Principales ciudades donde están ubicados los compradores
+        - Principales ciudades donde están ubicados los vendedores
+        - Número de operaciones por ciudad
+        - Comisión ganada por ciudad
         
-        **Why it matters:**
-        - Identify strong and weak geographic markets
-        - Plan regional expansion strategies
-        - Allocate field sales resources geographically
-        - Understand regional business patterns
+        **Por qué importa:**
+        - Identificar mercados geográficos fuertes y débiles
+        - Planificar estrategias de expansión regional
+        - Asignar recursos de ventas de campo geográficamente
+        - Entender patrones de negocio regionales
         
-        **How to use it:**
-        - Increase presence in high-commission cities
-        - Investigate why some regions perform better
-        - Plan targeted marketing campaigns by region
+        **Cómo usarlo:**
+        - Aumente presencia en ciudades de alta comisión
+        - Investigue por qué algunas regiones tienen mejor desempeño
+        - Planifique campañas de marketing por región
         """)
     
     col_geo1, col_geo2 = st.columns(2)
     
     with col_geo1:
-        st.markdown("**Top Cities - Buyers**")
+        st.markdown("**Principales Ciudades - Compradores**")
         buyer_cities_where = filter_query + (" AND " if filter_query else "WHERE ") + '"CIUDAD COMPRADOR" IS NOT NULL'
         buyer_cities_query = f"""
             SELECT 
@@ -2611,24 +2414,21 @@ with tabs[4]:
             LIMIT 10
         """
         
-        with st.expander("🔍 View SQL Query", expanded=False):
+        with st.expander("🔍 Ver Consulta SQL", expanded=False):
             st.code(buyer_cities_query, language="sql")
         
-        buyer_cities_df = safe_query(buyer_cities_query, "buyer cities")
+        buyer_cities_df = safe_query(buyer_cities_query, "ciudades compradores")
         
         if not buyer_cities_df.empty:
             st.dataframe(
-                buyer_cities_df.style.format({
-                    'operations': '{:,.0f}',
-                    'commission_earnings': '${:,.0f}'
-                }),
-                use_container_width=True
+                buyer_cities_df.style.format({'operations': '{:,.0f}', 'commission_earnings': '${:,.0f}'}),
+                width="stretch"
             )
         else:
-            st.info("No buyer city data")
+            st.info("No hay datos de ciudades de compradores")
     
     with col_geo2:
-        st.markdown("**Top Cities - Sellers**")
+        st.markdown("**Principales Ciudades - Vendedores**")
         seller_cities_where = filter_query + (" AND " if filter_query else "WHERE ") + '"CIUDAD VENDEDOR" IS NOT NULL'
         seller_cities_query = f"""
             SELECT 
@@ -2642,49 +2442,45 @@ with tabs[4]:
             LIMIT 10
         """
         
-        with st.expander("🔍 View SQL Query", expanded=False):
+        with st.expander("🔍 Ver Consulta SQL", expanded=False):
             st.code(seller_cities_query, language="sql")
         
-        seller_cities_df = safe_query(seller_cities_query, "seller cities")
+        seller_cities_df = safe_query(seller_cities_query, "ciudades vendedores")
         
         if not seller_cities_df.empty:
             st.dataframe(
-                seller_cities_df.style.format({
-                    'operations': '{:,.0f}',
-                    'commission_earnings': '${:,.0f}'
-                }),
-                use_container_width=True
+                seller_cities_df.style.format({'operations': '{:,.0f}', 'commission_earnings': '${:,.0f}'}),
+                width="stretch"
             )
         else:
-            st.info("No seller city data")
+            st.info("No hay datos de ciudades de vendedores")
 
-# --- TAB 6: RISK & AUDIT ---
+# --- PESTAÑA 6: RIESGO Y AUDITORÍA ---
 with tabs[5]:
-    st.header("🛡️ Risk & Audit Dashboard")
+    st.header("🛡️ Tablero de Riesgo y Auditoría")
     
-    # commission concentration (Pareto)
-    st.subheader("1. commission concentration Analysis (Pareto)")
-    st.markdown("_Monitor dependency on key clients_")
+    st.subheader("1. Análisis de Concentración de Comisiones (Pareto)")
+    st.markdown("_Monitorear dependencia de clientes clave_")
     
-    with st.expander("ℹ️ What does this show?", expanded=False):
+    with st.expander("ℹ️ ¿Qué muestra esto?", expanded=False):
         st.markdown("""
-        **Business Question:** Are we too dependent on a small number of clients?
+        **Pregunta de Negocio:** ¿Somos demasiado dependientes de un pequeño número de clientes?
         
-        **What we're measuring:**
-        - The famous "80/20 rule" - do 20% of clients generate 80% of commission?
-        - Commission from each client
-        - Cumulative commission percentage (red line showing running total)
+        **Qué estamos midiendo:**
+        - La famosa "regla 80/20" - ¿el 20% de los clientes genera el 80% de la comisión?
+        - Comisión de cada cliente
+        - Porcentaje acumulado de comisión (línea roja mostrando total acumulado)
         
-        **Why it matters:**
-        - **High concentration = High risk**: If a few clients leave, you lose significant commission
-        - **Balanced distribution = Lower risk**: Commission spread across many clients is healthier
+        **Por qué importa:**
+        - **Alta concentración = Alto riesgo**: Si pocos clientes se van, pierde comisión significativa
+        - **Distribución equilibrada = Menor riesgo**: Comisión repartida entre muchos clientes es más saludable
         
-        **How to use it:**
-        - **If the red line reaches 80% quickly**: You're highly dependent on few clients - RISK!
-          - Action: Diversify client base, acquire new clients
-        - **If the red line rises gradually**: Healthy distribution - GOOD!
+        **Cómo usarlo:**
+        - **Si la línea roja llega al 80% rápido**: Depende mucho de pocos clientes - ¡RIESGO!
+          - Acción: Diversifique la base de clientes, adquiera nuevos clientes
+        - **Si la línea roja sube gradualmente**: Distribución saludable - ¡BIEN!
           
-        **Example:** If 3 clients generate 80% of commission, losing one client could be devastating.
+        **Ejemplo:** Si 3 clientes generan el 80% de la comisión, perder uno podría ser devastador.
         """)
     
     pareto_query = f"""
@@ -2698,92 +2494,81 @@ with tabs[5]:
         LIMIT 50
     """
     
-    with st.expander("🔍 View SQL Query", expanded=False):
+    with st.expander("🔍 Ver Consulta SQL", expanded=False):
         st.code(pareto_query, language="sql")
     
-    pareto_df = safe_query(pareto_query, "pareto analysis")
+    pareto_df = safe_query(pareto_query, "análisis de Pareto")
     
     if not pareto_df.empty:
         pareto_df['cumulative_commission'] = pareto_df['commission_earnings'].cumsum()
         pareto_df['cumulative_pct'] = (pareto_df['cumulative_commission'] / pareto_df['commission_earnings'].sum()) * 100
         
         fig_pareto = go.Figure()
-        
         fig_pareto.add_trace(go.Bar(
             x=pareto_df['CLIENTE'],
             y=pareto_df['commission_earnings'],
-            name='Commission',
+            name='Comisión',
             marker_color='lightblue',
-            hovertemplate='<b>%{x}</b><br>Commission: $%{y:,.0f}<extra></extra>'
+            hovertemplate='<b>%{x}</b><br>Comisión: $%{y:,.0f}<extra></extra>'
         ))
-        
         fig_pareto.add_trace(go.Scatter(
             x=pareto_df['CLIENTE'],
             y=pareto_df['cumulative_pct'],
-            name='Cumulative %',
+            name='% Acumulado',
             yaxis='y2',
             mode='lines+markers',
             marker=dict(color='red', size=6),
             line=dict(color='red', width=2),
-            hovertemplate='<b>%{x}</b><br>Cumulative: %{y:.1f}%<extra></extra>'
+            hovertemplate='<b>%{x}</b><br>Acumulado: %{y:.1f}%<extra></extra>'
         ))
-        
         fig_pareto.update_layout(
-            title='commission concentration (Pareto Chart)',
-            xaxis_title='Client',
-            yaxis_title='Commission ($)',
-            yaxis2=dict(
-                title='Cumulative Percentage (%)',
-                overlaying='y',
-                side='right',
-                range=[0, 100]
-            ),
+            title='Concentración de Comisiones (Gráfico de Pareto)',
+            xaxis_title='Cliente',
+            yaxis_title='Comisión ($)',
+            yaxis2=dict(title='Porcentaje Acumulado (%)', overlaying='y', side='right', range=[0, 100]),
             hovermode='x unified',
             showlegend=True
         )
+        st.plotly_chart(fig_pareto, width="stretch")
         
-        st.plotly_chart(fig_pareto, use_container_width=True)
-        
-        # Calculate 80-20 rule
         top_20_pct_count = int(len(pareto_df) * 0.2)
         top_20_commission_pct = pareto_df.iloc[:top_20_pct_count]['commission_earnings'].sum() / pareto_df['commission_earnings'].sum() * 100
         
-        st.info(f"📊 Top 20% of clients ({top_20_pct_count} clients) generate {top_20_commission_pct:.1f}% of commission")
+        st.info(f"📊 El top 20% de clientes ({top_20_pct_count} clientes) genera el {top_20_commission_pct:.1f}% de la comisión")
         
         if top_20_commission_pct > 80:
-            st.warning("⚠️ High commission concentration risk detected")
+            st.warning("⚠️ Alto riesgo de concentración de comisiones detectado")
         else:
-            st.success("✅ Healthy commission distribution")
+            st.success("✅ Distribución saludable de comisiones")
     else:
-        st.info("No data for Pareto analysis")
+        st.info("No hay datos para el análisis de Pareto")
     
-    # Pricing anomalies
     st.markdown("---")
-    st.subheader("2. Pricing Anomaly Detection")
-    st.markdown("_Transactions with significantly lower commission rates_")
+    st.subheader("2. Detección de Anomalías de Precios")
+    st.markdown("_Transacciones con tasas de comisión significativamente bajas_")
     
-    with st.expander("ℹ️ What does this show?", expanded=False):
+    with st.expander("ℹ️ ¿Qué muestra esto?", expanded=False):
         st.markdown("""
-        **Business Question:** Are there transactions where we charged unusually low commissions?
+        **Pregunta de Negocio:** ¿Hay transacciones donde cobramos comisiones inusualmente bajas?
         
-        **What we're measuring:**
-        - Transactions where commission rate is 30% or more below the product average
-        - The actual commission rate charged
-        - The normal market average rate for that product
-        - The discount percentage given
+        **Qué estamos midiendo:**
+        - Transacciones donde la tasa de comisión está 30% o más por debajo del promedio del producto
+        - La tasa de comisión real cobrada
+        - La tasa promedio normal del mercado para ese producto
+        - El porcentaje de descuento dado
         
-        **Why it matters:**
-        - **Detect pricing errors**: Someone may have entered wrong rates
-        - **Identify special deals**: Understand which clients got discounts
-        - **Commission leakage**: Are we leaving money on the table?
+        **Por qué importa:**
+        - **Detectar errores de precios**: Alguien puede haber ingresado tarifas incorrectas
+        - **Identificar tratos especiales**: Entender qué clientes obtuvieron descuentos
+        - **Fuga de comisión**: ¿Estamos dejando dinero sobre la mesa?
         
-        **How to use it:**
-        - Review each transaction on this list
-        - Verify if the low rate was intentional (approved discount) or an error
-        - If error: Correct it and retrain staff
-        - If intentional: Ensure it's documented and justified
+        **Cómo usarlo:**
+        - Revise cada transacción en esta lista
+        - Verifique si la tasa baja fue intencional (descuento aprobado) o un error
+        - Si es error: Corríjalo y reentrene al personal
+        - Si fue intencional: Asegúrese de que esté documentado y justificado
         
-        **Example:** If normal rate is 5% but you charged 2%, you're losing 60% of potential commission on that deal.
+        **Ejemplo:** Si la tasa normal es del 5% pero cobró el 2%, está perdiendo el 60% de la comisión potencial en ese negocio.
         """)
     
     anomaly_query = f"""
@@ -2812,10 +2597,10 @@ with tabs[5]:
         LIMIT 20
     """
     
-    with st.expander("🔍 View SQL Query", expanded=False):
+    with st.expander("🔍 Ver Consulta SQL", expanded=False):
         st.code(anomaly_query, language="sql")
     
-    anomaly_df = safe_query(anomaly_query, "pricing anomalies")
+    anomaly_df = safe_query(anomaly_query, "anomalías de precios")
     
     if not anomaly_df.empty:
         st.dataframe(
@@ -2825,41 +2610,40 @@ with tabs[5]:
                 'market_avg_rate': '{:.2f}%',
                 'discount_pct': '{:.1f}%'
             }),
-            use_container_width=True
+            width="stretch"
         )
-        st.warning(f"⚠️ Found {len(anomaly_df)} transactions with unusually low commission rates")
-        st.markdown("**Action:** Review these transactions for pricing errors or special agreements")
+        st.warning(f"⚠️ Se encontraron {len(anomaly_df)} transacciones con tasas de comisión inusualmente bajas")
+        st.markdown("**Acción:** Revise estas transacciones para detectar errores de precios o acuerdos especiales")
     else:
-        st.success("✅ No significant pricing anomalies detected")
+        st.success("✅ No se detectaron anomalías de precios significativas")
     
-    # Transaction size distribution
     st.markdown("---")
-    st.subheader("3. Transaction Size Distribution")
+    st.subheader("3. Distribución del Tamaño de Transacciones")
     
-    with st.expander("ℹ️ What does this show?", expanded=False):
+    with st.expander("ℹ️ ¿Qué muestra esto?", expanded=False):
         st.markdown("""
-        **Business Question:** What's the typical size of our transactions?
+        **Pregunta de Negocio:** ¿Cuál es el tamaño típico de nuestras transacciones?
         
-        **What we're measuring:**
-        - Transactions grouped by value:
-          - **Small**: Less than $1 million
-          - **Medium**: $1M to $10M
-          - **Large**: $10M to $50M
-          - **Very Large**: Over $50M
-        - Count of transactions in each category
-        - Total commission from each category
-        - Average commission rate by size
+        **Qué estamos midiendo:**
+        - Transacciones agrupadas por valor:
+          - **Pequeña**: Menos de $1 millón
+          - **Mediana**: $1M a $10M
+          - **Grande**: $10M a $50M
+          - **Muy Grande**: Más de $50M
+        - Conteo de transacciones en cada categoría
+        - Comisión total por categoría
+        - Tasa promedio de comisión por tamaño
         
-        **Why it matters:**
-        - Understand your business composition
-        - Large deals may need special handling or approval
-        - Different sizes may require different processes
-        - Plan resources based on typical deal sizes
+        **Por qué importa:**
+        - Entender la composición de su negocio
+        - Los negocios grandes pueden necesitar manejo o aprobación especial
+        - Diferentes tamaños pueden requerir diferentes procesos
+        - Planificar recursos según tamaños típicos de negocio
         
-        **How to use it:**
-        - If most transactions are small: Focus on efficiency and volume
-        - If dominated by large deals: Ensure quality control and risk management
-        - Set up different approval workflows for different sizes
+        **Cómo usarlo:**
+        - Si la mayoría son pequeñas: Enfóquese en eficiencia y volumen
+        - Si dominan los negocios grandes: Asegure control de calidad y gestión de riesgos
+        - Configure flujos de aprobación diferentes según tamaños
         """)
     
     col_size1, col_size2 = st.columns(2)
@@ -2868,10 +2652,10 @@ with tabs[5]:
         size_query = f"""
             SELECT 
                 CASE 
-                    WHEN "VALOR NEGOCIO" < 1000000 THEN 'Small (< $1M)'
-                    WHEN "VALOR NEGOCIO" < 10000000 THEN 'Medium ($1M-$10M)'
-                    WHEN "VALOR NEGOCIO" < 50000000 THEN 'Large ($10M-$50M)'
-                    ELSE 'Very Large (> $50M)'
+                    WHEN "VALOR NEGOCIO" < 1000000 THEN 'Pequeña (< $1M)'
+                    WHEN "VALOR NEGOCIO" < 10000000 THEN 'Mediana ($1M-$10M)'
+                    WHEN "VALOR NEGOCIO" < 50000000 THEN 'Grande ($10M-$50M)'
+                    ELSE 'Muy Grande (> $50M)'
                 END as size_category,
                 COUNT(*) as transaction_count,
                 SUM(COMISION) as total_commission,
@@ -2881,70 +2665,69 @@ with tabs[5]:
             GROUP BY size_category
             ORDER BY 
                 CASE size_category
-                    WHEN 'Small (< $1M)' THEN 1
-                    WHEN 'Medium ($1M-$10M)' THEN 2
-                    WHEN 'Large ($10M-$50M)' THEN 3
+                    WHEN 'Pequeña (< $1M)' THEN 1
+                    WHEN 'Mediana ($1M-$10M)' THEN 2
+                    WHEN 'Grande ($10M-$50M)' THEN 3
                     ELSE 4
                 END
         """
         
-        with st.expander("🔍 View SQL Query", expanded=False):
+        with st.expander("🔍 Ver Consulta SQL", expanded=False):
             st.code(size_query, language="sql")
         
-        size_df = safe_query(size_query, "transaction size")
+        size_df = safe_query(size_query, "tamaño de transacciones")
         
         if not size_df.empty:
             fig_size = px.pie(
                 size_df,
                 values='transaction_count',
                 names='size_category',
-                title='Transaction Count by Size',
+                title='Conteo de Transacciones por Tamaño',
                 hole=0.4,
                 color_discrete_sequence=px.colors.sequential.Blues
             )
             fig_size.update_traces(
-                hovertemplate='<b>%{label}</b><br>Count: %{value}<br>Commission: $%{customdata[0]:,.0f}<extra></extra>',
+                hovertemplate='<b>%{label}</b><br>Conteo: %{value}<br>Comisión: $%{customdata[0]:,.0f}<extra></extra>',
                 customdata=size_df[['total_commission']]
             )
-            st.plotly_chart(fig_size, use_container_width=True)
+            st.plotly_chart(fig_size, width="stretch")
         else:
-            st.info("No transaction size data")
+            st.info("No hay datos de tamaño de transacciones")
     
     with col_size2:
         if not size_df.empty:
-            st.markdown("**Transaction Size Breakdown**")
+            st.markdown("**Desglose por Tamaño de Transacciones**")
             st.dataframe(
                 size_df.style.format({
                     'transaction_count': '{:,.0f}',
                     'total_commission': '${:,.0f}',
                     'avg_commission_rate': '{:.2f}%'
                 }),
-                use_container_width=True
+                width="stretch"
             )
-            st.caption("💡 Large transactions may require special handling")
+            st.caption("💡 Las transacciones grandes pueden requerir manejo especial")
 
-# Footer
+# Pie de página
 st.markdown("---")
-st.markdown("""
-### 📊 **Dashboard Summary**
+st.markdown(f"""
+### 📊 **Resumen del Tablero**
 
-**Enhanced Features:**
-- ✅ Improved error handling and data validation
-- ✅ Better SQL queries with proper NULL handling
-- ✅ Enhanced visualizations with tooltips
-- ✅ Comprehensive filtering options
-- ✅ Risk management and anomaly detection
-- ✅ Geographic and operational insights
+**Características Mejoradas:**
+- ✅ Manejo de errores y validación de datos mejorados
+- ✅ Mejores consultas SQL con manejo adecuado de valores nulos
+- ✅ Visualizaciones mejoradas con tooltips
+- ✅ Opciones de filtrado integrales
+- ✅ Gestión de riesgos y detección de anomalías
+- ✅ Perspectivas geográficas y operativas
 
-**Next Steps:**
-1. Set up automated alerts for key metrics
-2. Export reports for stakeholder meetings
-3. Schedule regular dashboard reviews
-4. Integrate with CRM for client management
+**Próximos Pasos:**
+1. Configurar alertas automatizadas para métricas clave
+2. Exportar informes para reuniones con partes interesadas
+3. Programar revisiones regulares del tablero
+4. Integrar con CRM para gestión de clientes
 
 ---
-*Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M')}*
+*Última actualización: {datetime.now().strftime('%Y-%m-%d %H:%M')}*
 """)
 
-# Close connection when done
-# con.close()  # Don't close here - let Streamlit cache handle it
+# con.close()  # No cerrar aquí - dejar que la caché de Streamlit lo maneje
