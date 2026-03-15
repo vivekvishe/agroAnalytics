@@ -178,13 +178,19 @@ def safe_query(query, description="consulta"):
         st.code(query, language="sql")
         return pd.DataFrame()
 
-def upsert_to_db(db_path, new_df):
+def upsert_to_db(db_path, new_df, existing_con=None):
     """
     Upsert (insert or update) records into operaciones_bmc.
     Records with an existing OPERACION value are updated; new ones are inserted.
     Returns (rows_affected, error_message).
     """
-    # Clear the cached read-only connection so DuckDB can open a write connection
+    # Must explicitly close the existing read-only connection BEFORE clearing cache,
+    # otherwise DuckDB refuses to open a write connection to the same file.
+    if existing_con is not None:
+        try:
+            existing_con.close()
+        except Exception:
+            pass
     get_connection.clear()
     write_con = None
     try:
@@ -376,7 +382,7 @@ with st.sidebar.expander("📤 Actualizar Datos en BD", expanded=False):
 
             if st.button("💾 Confirmar y Actualizar BD", type="primary", key="confirm_upsert", use_container_width=True):
                 with st.spinner("Actualizando base de datos…"):
-                    rows_affected, error = upsert_to_db(DB_PATH, upload_df)
+                    rows_affected, error = upsert_to_db(DB_PATH, upload_df, existing_con=con)
                 if error:
                     st.error(f"❌ Error: {error}")
                 else:
