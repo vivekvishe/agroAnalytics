@@ -1,0 +1,134 @@
+BMC ANALYTICS DASHBOARD - REGRESSION TEST REPORT
+================================================================================
+Test Date: 2026-02-14 21:45:39
+Database: /Users/vivekvishe/Documents/agro/bmc_data.db
+
+Total Tests: 30
+Passed: 30
+Failed: 0
+Success Rate: 100.0%
+
+================================================================================
+DETAILED RESULTS
+================================================================================
+
+✅ 1.1 - Count total records
+   Status: PASS
+   Rows: 1
+
+✅ 1.2 - Get distinct months
+   Status: PASS
+   Rows: 5
+
+✅ 1.3 - Get distinct years
+   Status: PASS
+   Rows: 1
+
+✅ 1.4 - Get operation types
+   Status: PASS
+   Rows: 2
+
+✅ 2.1 - Overview metrics
+   Status: PASS
+   Rows: 1
+
+✅ 3.1 - Monthly commission trend
+   Status: PASS
+   Rows: 5
+
+✅ 3.2 - Top 10 clients
+   Status: PASS
+   Rows: 10
+
+✅ 3.3 - All referenciadores
+   Status: PASS
+   Rows: 19
+
+✅ 3.4 - Product performance
+   Status: PASS
+   Rows: 10
+
+✅ 4.1 - Churn risk analysis
+   Status: PASS
+   Rows: 15
+
+✅ 4.2 - Cross-selling opportunities
+   Status: PASS
+   Rows: 10
+
+✅ 4.3 - Client segmentation
+   Status: PASS
+   Rows: 4
+
+✅ 5.1 - Seller hubs
+   Status: PASS
+   Rows: 10
+
+✅ 5.2 - Buyer hubs
+   Status: PASS
+   Rows: 10
+
+✅ 5.3 - Principal analysis
+   Status: PASS
+   Rows: 2
+
+✅ 5.4 - Mutual relationships
+   Status: PASS
+   Rows: 20
+
+✅ 5.5 - Network metrics
+   Status: PASS
+   Rows: 1
+
+✅ 6.1 - Current clients list
+   Status: PASS
+   Rows: 873
+
+✅ 6.2 - Potential buyer clients
+   Status: PASS
+   Rows: 20
+
+✅ 6.3 - Potential seller clients
+   Status: PASS
+   Rows: 20
+
+✅ 7.1 - Day of week analysis
+   Status: PASS
+   Rows: 5
+
+✅ 7.2 - Operations by type
+   Status: PASS
+   Rows: 2
+
+✅ 7.3 - Buyer cities
+   Status: PASS
+   Rows: 10
+
+✅ 7.4 - Seller cities
+   Status: PASS
+   Rows: 10
+
+✅ 8.1 - Pareto analysis
+   Status: PASS
+   Rows: 50
+
+✅ 8.2 - Pricing anomalies
+   Status: PASS
+   Rows: 20
+
+✅ 8.3 - Transaction size distribution
+   Status: PASS
+   Rows: 4
+
+✅ 9.1 - Client list
+   Status: PASS
+   Rows: 1
+
+✅ 9.2 - Client stats
+   Status: PASS
+   Rows: 1
+
+✅ 9.3 - Market comparison
+   Status: PASS
+   Rows: 10
+

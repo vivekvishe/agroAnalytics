@@ -1,0 +1,16 @@
+# BMC Analytics Dashboard Configuration
+# Copy this file and update with your settings
+
+# Database Path
+# Update this with the full path to your bmc_data.db file
+DB_PATH=/Users/vivekvishe/Documents/agro/bmc_data.db
+
+# Example paths:
+# Windows: C:/Users/YourName/Documents/agro/bmc_data.db
+# Mac: /Users/YourName/Documents/agro/bmc_data.db
+# Linux: /home/yourname/Documents/agro/bmc_data.db
+
+# How to use:
+# 1. Update DB_PATH above with your actual database location
+# 2. Save this file
+# 3. The test script and dashboard will automatically read from here
