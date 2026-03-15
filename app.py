@@ -127,6 +127,8 @@ if not os.path.exists(DB_PATH):
                         init_df = pd.read_csv(init_file, sep=None, engine="python", encoding_errors="replace")
                     else:
                         init_df = pd.read_excel(init_file)
+                    # Strip leading/trailing spaces from all column names
+                    init_df.columns = init_df.columns.str.strip()
 
                     # Create the DuckDB database next to app.py
                     bootstrap_con = duckdb.connect(DB_PATH, read_only=False)
@@ -363,6 +365,8 @@ with st.sidebar.expander("📤 Actualizar Datos en BD", expanded=False):
                 upload_df = pd.read_csv(upsert_file, sep=None, engine="python", encoding_errors="replace")
             else:
                 upload_df = pd.read_excel(upsert_file)
+            # Strip leading/trailing spaces from all column names
+            upload_df.columns = upload_df.columns.str.strip()
 
             st.success(f"📊 **{len(upload_df):,} registros** listos para cargar")
             st.markdown(f"Columnas detectadas: `{len(upload_df.columns)}`")
