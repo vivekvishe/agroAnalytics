@@ -93,8 +93,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-import tempfile
-
 # DB path resolution (in priority order):
 # 1. DB_PATH environment variable
 # 2. Same folder as app.py (default - works on Streamlit Cloud)
@@ -102,33 +100,60 @@ import tempfile
 _default_db = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bmc_data.db")
 DB_PATH = os.environ.get("DB_PATH", _default_db)
 
-# If the database is not found, show a file uploader
+# If the database is not found, let the user create it from a CSV / Excel file
 if not os.path.exists(DB_PATH):
-    if "uploaded_db_path" not in st.session_state:
-        st.markdown("""
-            <div style='text-align: center; padding: 40px 0;'>
-                <h2>🗄️ Base de Datos No Encontrada</h2>
-                <p style='color: #666;'>El archivo <code>bmc_data.db</code> no fue encontrado automáticamente.</p>
-                <p>Por favor suba el archivo de base de datos para continuar.</p>
-            </div>
-        """, unsafe_allow_html=True)
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            uploaded_db = st.file_uploader(
-                "📂 Seleccione el archivo bmc_data.db",
-                type=["db"],
-                help="Suba el archivo de base de datos DuckDB (.db)"
+    st.markdown("""
+        <div style='text-align: center; padding: 40px 0;'>
+            <h2>🗄️ Base de Datos No Encontrada</h2>
+            <p style='color: #666;'>No se encontró <code>bmc_data.db</code> en este equipo.</p>
+            <p>Suba su archivo de datos <strong>CSV o Excel</strong> y la base de datos se creará
+            automáticamente en su máquina.</p>
+        </div>
+    """, unsafe_allow_html=True)
+
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        init_file = st.file_uploader(
+            "📂 Seleccione su archivo de datos (CSV o Excel)",
+            type=["csv", "xlsx", "xls"],
+            help="Se creará bmc_data.db a partir de este archivo en la misma carpeta que app.py"
+        )
+
+        if init_file is not None:
+            with st.spinner("⏳ Creando base de datos, por favor espere…"):
+                try:
+                    if init_file.name.lower().endswith(".csv"):
+                        init_df = pd.read_csv(init_file)
+                    else:
+                        init_df = pd.read_excel(init_file)
+
+                    # Create the DuckDB database next to app.py
+                    bootstrap_con = duckdb.connect(DB_PATH, read_only=False)
+                    bootstrap_con.register("_init_data", init_df)
+                    bootstrap_con.execute(
+                        "CREATE OR REPLACE TABLE operaciones_bmc AS "
+                        "SELECT * FROM _init_data"
+                    )
+                    bootstrap_con.close()
+
+                    st.success(
+                        f"✅ Base de datos creada con **{len(init_df):,} registros** "
+                        f"y **{len(init_df.columns)} columnas**."
+                    )
+                    st.info("🔄 Cargando el tablero…")
+                    st.rerun()
+
+                except Exception as e:
+                    st.error(f"❌ Error al crear la base de datos: {str(e)}")
+                    st.stop()
+        else:
+            st.info(
+                "💡 El archivo debe contener las columnas de operaciones del BMC "
+                "(OPERACION, CLIENTE, COMISION, VALOR NEGOCIO, etc.).\n\n"
+                "La base de datos se guardará como **bmc_data.db** junto a app.py "
+                "y se usará automáticamente en las próximas sesiones."
             )
-            if uploaded_db is not None:
-                tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".db")
-                tmp.write(uploaded_db.read())
-                tmp.close()
-                st.session_state["uploaded_db_path"] = tmp.name
-                st.rerun()
-            else:
-                st.info("💡 El archivo bmc_data.db puede estar en cualquier carpeta de su computador.")
-                st.stop()
-    DB_PATH = st.session_state["uploaded_db_path"]
+            st.stop()
 
 @st.cache_resource
 def get_connection(db_path):
