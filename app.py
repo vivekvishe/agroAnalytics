@@ -123,7 +123,8 @@ if not os.path.exists(DB_PATH):
             with st.spinner("⏳ Creando base de datos, por favor espere…"):
                 try:
                     if init_file.name.lower().endswith(".csv"):
-                        init_df = pd.read_csv(init_file)
+                        # sep=None + engine='python' auto-detects delimiter (comma, semicolon, tab, etc.)
+                        init_df = pd.read_csv(init_file, sep=None, engine="python", encoding_errors="replace")
                     else:
                         init_df = pd.read_excel(init_file)
 
@@ -358,7 +359,8 @@ with st.sidebar.expander("📤 Actualizar Datos en BD", expanded=False):
     if upsert_file is not None:
         try:
             if upsert_file.name.lower().endswith(".csv"):
-                upload_df = pd.read_csv(upsert_file)
+                # sep=None + engine='python' auto-detects delimiter (comma, semicolon, tab, etc.)
+                upload_df = pd.read_csv(upsert_file, sep=None, engine="python", encoding_errors="replace")
             else:
                 upload_df = pd.read_excel(upsert_file)
 
