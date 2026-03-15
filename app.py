@@ -93,7 +93,13 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bmc_data.db")
+# DB path resolution (in priority order):
+# 1. DB_PATH environment variable (set this on any machine where the db is elsewhere)
+# 2. Same folder as app.py (default - works on Streamlit Cloud and when db is next to the app)
+DB_PATH = os.environ.get(
+    "DB_PATH",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "bmc_data.db")
+)
 
 @st.cache_resource
 def get_connection():
