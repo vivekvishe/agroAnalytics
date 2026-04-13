@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 import os
 import tempfile
 import uuid
+import threading
 from datetime import datetime, timedelta
 import hashlib
 
@@ -27,13 +28,27 @@ st.set_page_config(
 # ============================================
 
 # NOTA DE SEGURIDAD: La contraseña se almacena como hash SHA-256, no en texto plano
-
+# Establezca ADMIN_USERNAME y PASSWORD_HASH en st.secrets (Streamlit Cloud) o como
+# variables de entorno. Si no se definen, se usan los valores predeterminados.
+#
 # Para generar el hash de una nueva contraseña, ejecute en Python:
-#   import hashlib
-#   hashlib.sha256("SuNuevaContraseña".encode()).hexdigest()
+#   import hashlib; hashlib.sha256("SuContraseña".encode()).hexdigest()
 
-ADMIN_USERNAME = "admin"
-PASSWORD_HASH = "e0bd631724a4fb17f0fc7c19ac460ef1838cdf4c4d0a922e63c09d92b90922d8"
+def _get_secret(env_key: str, default: str) -> str:
+    """Lee env var → st.secrets → default (en ese orden de prioridad)."""
+    val = os.environ.get(env_key)
+    if val:
+        return val
+    try:
+        return st.secrets.get(env_key, default)
+    except Exception:
+        return default
+
+ADMIN_USERNAME = _get_secret("ADMIN_USERNAME", "admin")
+PASSWORD_HASH  = _get_secret(
+    "PASSWORD_HASH",
+    "e0bd631724a4fb17f0fc7c19ac460ef1838cdf4c4d0a922e63c09d92b90922d8"
+)
 
 def hash_password(password):
     """Genera hash SHA-256 de una contraseña"""
@@ -100,28 +115,14 @@ st.markdown("""
 # On the server, a session-specific temp file is used so nothing persists after the session ends.
 # If DB_PATH env var is set (custom deployment), that path is used instead.
 if "db_temp_path" not in st.session_state:
-    # Use uuid to generate a unique path without creating a file (avoids mkstemp race conditions)
+    # uuid-based name: no file created, no race condition
     _tmp_name = f"bmc_{uuid.uuid4().hex}.db"
     st.session_state["db_temp_path"] = os.path.join(tempfile.gettempdir(), _tmp_name)
 
-if "db_bytes" not in st.session_state:
-    st.session_state["db_bytes"] = None
-
 DB_PATH = os.environ.get("DB_PATH", st.session_state["db_temp_path"])
 
-# If session has DB bytes but the temp file was cleaned up by the OS, recreate it
-if st.session_state["db_bytes"] is not None and not os.path.exists(DB_PATH):
-    try:
-        with open(DB_PATH, "wb") as _recreate_f:
-            _recreate_f.write(st.session_state["db_bytes"])
-    except Exception as _recreate_err:
-        st.error(f"❌ No se pudo restaurar la base de datos temporal: {_recreate_err}")
-        st.session_state["db_bytes"] = None
-        st.session_state.pop("db_temp_path", None)
-        st.rerun()
-
-# If the database is not found (no session bytes and no temp file), prompt the user
-if st.session_state["db_bytes"] is None and not os.path.exists(DB_PATH):
+# If the database temp file is not found, prompt the user to load data
+if not os.path.exists(DB_PATH):
     st.markdown("""
         <div style='text-align: center; padding: 40px 0;'>
             <h2>🗄️ Base de Datos No Encontrada</h2>
@@ -147,14 +148,14 @@ if st.session_state["db_bytes"] is None and not os.path.exists(DB_PATH):
         if db_restore_file is not None:
             with st.spinner("⏳ Restaurando base de datos…"):
                 try:
-                    _restore_bytes = db_restore_file.read()
-                    st.cache_resource.clear()
+                    # Write the file BEFORE clearing the cache.
+                    # If we cleared first and the write failed the session would be
+                    # stuck with no connection and no file.
                     with open(DB_PATH, "wb") as _f:
-                        _f.write(_restore_bytes)
-                    # Keep bytes in session so temp file can be rebuilt if OS cleans it up
-                    st.session_state["db_bytes"] = _restore_bytes
-                except Exception as e:
-                    st.error(f"❌ Error al restaurar la base de datos: {str(e)}")
+                        _f.write(db_restore_file.read())
+                    st.cache_resource.clear()
+                except Exception:
+                    st.error("❌ Error al restaurar la base de datos. Intente de nuevo.")
                     st.stop()
             st.success("✅ Base de datos restaurada correctamente. Cargando tablero…")
             st.rerun()
@@ -174,50 +175,79 @@ if st.session_state["db_bytes"] is None and not os.path.exists(DB_PATH):
 
         if init_file is not None:
             with st.spinner("⏳ Creando base de datos, por favor espere…"):
+                _csv_tmp = None
                 try:
-                    # Clear ALL cached resources (including any stale read-only DB connection)
-                    # so DuckDB allows opening the same file with a write connection
                     st.cache_resource.clear()
 
-                    if init_file.name.lower().endswith(".csv"):
-                        # sep=None + engine='python' auto-detects delimiter (comma, semicolon, tab, etc.)
-                        init_df = pd.read_csv(init_file, sep=None, engine="python", encoding_errors="replace")
-                    else:
-                        init_df = pd.read_excel(init_file)
-                    # Strip leading/trailing spaces from all column names
-                    init_df.columns = init_df.columns.str.strip()
-
-                    # If a stale temp file exists from a previous failed attempt, remove it first
+                    # Remove stale temp DB from a previous failed attempt
                     if os.path.exists(DB_PATH):
                         try:
                             os.unlink(DB_PATH)
                         except Exception:
                             pass
 
-                    # Create the DuckDB database in the session temp file (not app directory)
-                    bootstrap_con = duckdb.connect(DB_PATH, read_only=False)
-                    bootstrap_con.register("_init_data", init_df)
-                    bootstrap_con.execute(
-                        "CREATE OR REPLACE TABLE operaciones_bmc AS "
-                        "SELECT * FROM _init_data"
-                    )
-                    bootstrap_con.close()
+                    if init_file.name.lower().endswith(".csv"):
+                        # Write the upload to a temp CSV file so DuckDB can read it
+                        # directly from disk — avoids loading a large file into a
+                        # pandas DataFrame (which can use 3-5× the raw file size in RAM)
+                        _csv_tmp = os.path.join(
+                            tempfile.gettempdir(),
+                            f"bmc_upload_{uuid.uuid4().hex}.csv"
+                        )
+                        with open(_csv_tmp, "wb") as _cf:
+                            _cf.write(init_file.read())
 
-                    # Store DB bytes in session so the server file can be reconstructed
-                    # across reruns without persisting a permanent copy on the server
-                    with open(DB_PATH, "rb") as _init_f:
-                        st.session_state["db_bytes"] = _init_f.read()
+                        _csv_sql = _csv_tmp.replace("\\", "/")  # safe on Windows too
+                        bootstrap_con = duckdb.connect(DB_PATH, read_only=False)
+                        bootstrap_con.execute(
+                            f"CREATE OR REPLACE TABLE operaciones_bmc AS "
+                            f"SELECT * FROM read_csv_auto('{_csv_sql}', header=true)"
+                        )
+                        # Strip whitespace from column names
+                        _cols = [r[0] for r in bootstrap_con.execute(
+                            "SELECT column_name FROM information_schema.columns "
+                            "WHERE table_name = 'operaciones_bmc' ORDER BY ordinal_position"
+                        ).fetchall()]
+                        for _col in _cols:
+                            if _col != _col.strip():
+                                bootstrap_con.execute(
+                                    f'ALTER TABLE operaciones_bmc RENAME COLUMN '
+                                    f'"{_col}" TO "{_col.strip()}"'
+                                )
+                        _created_rows = bootstrap_con.execute(
+                            "SELECT COUNT(*) FROM operaciones_bmc"
+                        ).fetchone()[0]
+                        _created_cols = len(_cols)
+                        bootstrap_con.close()
 
-                    _created_rows = len(init_df)
-                    _created_cols = len(init_df.columns)
+                    else:
+                        # Excel files are typically small; pandas is fine here
+                        init_df = pd.read_excel(init_file)
+                        init_df.columns = init_df.columns.str.strip()
+                        bootstrap_con = duckdb.connect(DB_PATH, read_only=False)
+                        bootstrap_con.register("_init_data", init_df)
+                        bootstrap_con.execute(
+                            "CREATE OR REPLACE TABLE operaciones_bmc AS "
+                            "SELECT * FROM _init_data"
+                        )
+                        _created_rows = len(init_df)
+                        _created_cols = len(init_df.columns)
+                        bootstrap_con.close()
+                        del init_df  # free memory immediately
 
                 except Exception as e:
-                    # Reset temp path so next attempt gets a fresh unique path
+                    # Reset temp path so the next attempt gets a fresh unique path
                     st.session_state.pop("db_temp_path", None)
-                    st.session_state["db_bytes"] = None
                     st.error(f"❌ Error al crear la base de datos: {str(e)}")
                     st.caption("Intente subir el archivo nuevamente. Si el error persiste, verifique que el archivo no esté dañado.")
                     st.stop()
+                finally:
+                    # Always clean up the temporary CSV upload file
+                    if _csv_tmp and os.path.exists(_csv_tmp):
+                        try:
+                            os.unlink(_csv_tmp)
+                        except Exception:
+                            pass
 
             # ── DB created — offer download before loading dashboard ──────────
             st.success(
@@ -232,19 +262,17 @@ if st.session_state["db_bytes"] is None and not os.path.exists(DB_PATH):
                 "para restaurar su base de datos sin necesidad de re-subir el CSV."
             )
 
-            st.download_button(
-                label="⬇️ Descargar bmc_data.db (recomendado)",
-                data=st.session_state["db_bytes"],
-                file_name="bmc_data.db",
-                mime="application/octet-stream",
-                type="primary",
-                use_container_width=True,
-                help="Guarde este archivo en su PC para restaurarlo en futuras sesiones"
-            )
+            with open(DB_PATH, "rb") as _dl_f:
+                st.download_button(
+                    label="⬇️ Descargar bmc_data.db (recomendado)",
+                    data=_dl_f.read(),
+                    file_name="bmc_data.db",
+                    mime="application/octet-stream",
+                    type="primary",
+                    use_container_width=True,
+                    help="Guarde este archivo en su PC para restaurarlo en futuras sesiones"
+                )
             st.caption("💡 Al hacer clic en **Descargar**, el tablero también se cargará automáticamente.")
-            # Clicking the download button triggers a Streamlit rerun.
-            # On that rerun DB_PATH exists → dashboard loads normally.
-            # st.stop() prevents the rest of the app from rendering until the user acts.
             st.stop()
 
         else:
@@ -258,23 +286,27 @@ if st.session_state["db_bytes"] is None and not os.path.exists(DB_PATH):
 
 @st.cache_resource
 def get_connection(db_path):
-    """Crea conexión a la base de datos con manejo de errores"""
+    """Crea conexión de solo-lectura a la base de datos."""
     try:
         return duckdb.connect(db_path, read_only=True)
-    except Exception as e:
-        st.error(f"❌ Error al conectar con la base de datos: {str(e)}")
+    except Exception:
+        st.error("❌ No se pudo conectar a la base de datos. Intente resetear la sesión.")
         st.stop()
 
 con = get_connection(DB_PATH)
 
-def safe_query(query, description="consulta"):
-    """Ejecuta consulta SQL con manejo de errores"""
+def safe_query(query, description="consulta", params=None):
+    """Ejecuta consulta SQL con manejo de errores. params es una lista de valores para consultas parametrizadas."""
     try:
+        if params:
+            return con.execute(query, params).df()
         return con.execute(query).df()
-    except Exception as e:
-        st.error(f"❌ Error ejecutando {description}: {str(e)}")
-        st.code(query, language="sql")
+    except Exception:
+        st.error(f"❌ Error al cargar {description}.")
         return pd.DataFrame()
+
+# Serialises all write operations so concurrent reruns never deadlock on the DB file
+_db_write_lock = threading.Lock()
 
 def upsert_to_db(db_path, new_df, existing_con=None):
     """
@@ -282,70 +314,74 @@ def upsert_to_db(db_path, new_df, existing_con=None):
     Records with an existing OPERACION value are updated; new ones are inserted.
     Returns (rows_affected, error_message).
     """
-    # Must explicitly close the existing read-only connection BEFORE clearing cache,
-    # otherwise DuckDB refuses to open a write connection to the same file.
-    if existing_con is not None:
+    with _db_write_lock:
+        # Close the read-only connection BEFORE clearing cache so DuckDB allows
+        # a write connection to the same file (DuckDB: one writer at a time).
+        if existing_con is not None:
+            try:
+                existing_con.close()
+            except Exception:
+                pass
+        get_connection.clear()
+
+        write_con = None
         try:
-            existing_con.close()
-        except Exception:
-            pass
-    get_connection.clear()
-    write_con = None
-    try:
-        write_con = duckdb.connect(db_path, read_only=False)
+            write_con = duckdb.connect(db_path, read_only=False)
+            write_con.execute("BEGIN")
 
-        # Discover columns that exist in the target table
-        existing_cols = write_con.execute(
-            "SELECT * FROM operaciones_bmc LIMIT 0"
-        ).df().columns.tolist()
+            # Discover columns that exist in the target table
+            existing_cols = write_con.execute(
+                "SELECT * FROM operaciones_bmc LIMIT 0"
+            ).df().columns.tolist()
 
-        # Keep only columns present in both the file and the table
-        valid_cols = [c for c in new_df.columns if c in existing_cols]
-        if not valid_cols:
-            return 0, "Ninguna columna del archivo coincide con la tabla. Verifique el formato."
+            # Keep only columns present in both the file and the table
+            valid_cols = [c for c in new_df.columns if c in existing_cols]
+            if not valid_cols:
+                write_con.execute("ROLLBACK")
+                return 0, "Ninguna columna del archivo coincide con la tabla. Verifique el formato."
 
-        upload_df = new_df[valid_cols].copy()
+            upload_df = new_df[valid_cols].copy()
 
-        # Register the dataframe as a temporary view
-        write_con.register("_staging", upload_df)
+            # Register the dataframe as a temporary view
+            write_con.register("_staging", upload_df)
 
-        inserted = 0
-        updated = 0
+            if "OPERACION" in valid_cols:
+                # Delete rows whose OPERACION already exists → replaced by incoming data
+                existing_ops = write_con.execute(
+                    "SELECT OPERACION FROM _staging WHERE OPERACION IN "
+                    "(SELECT OPERACION FROM operaciones_bmc)"
+                ).fetchdf()
+                if not existing_ops.empty:
+                    write_con.execute(
+                        "DELETE FROM operaciones_bmc WHERE OPERACION IN "
+                        "(SELECT OPERACION FROM _staging)"
+                    )
 
-        if "OPERACION" in valid_cols:
-            # Delete rows whose OPERACION already exists → will be replaced by the new data
-            existing_ops = write_con.execute(
-                "SELECT OPERACION FROM _staging WHERE OPERACION IN "
-                "(SELECT OPERACION FROM operaciones_bmc)"
-            ).fetchdf()
-            if not existing_ops.empty:
-                write_con.execute(
-                    "DELETE FROM operaciones_bmc WHERE OPERACION IN "
-                    "(SELECT OPERACION FROM _staging)"
-                )
-                updated = len(existing_ops)
+            col_list = ", ".join(f'"{c}"' for c in valid_cols)
+            write_con.execute(
+                f"INSERT INTO operaciones_bmc ({col_list}) "
+                f"SELECT {col_list} FROM _staging"
+            )
+            write_con.execute("COMMIT")
+            write_con.unregister("_staging")
+            return len(upload_df), None
 
-        col_list = ", ".join(f'"{c}"' for c in valid_cols)
-        write_con.execute(
-            f"INSERT INTO operaciones_bmc ({col_list}) "
-            f"SELECT {col_list} FROM _staging"
-        )
-        inserted = len(upload_df) - updated
-
-        write_con.unregister("_staging")
-        return len(upload_df), None
-
-    except Exception as e:
-        return 0, str(e)
-    finally:
-        if write_con:
-            write_con.close()
+        except Exception as e:
+            try:
+                if write_con:
+                    write_con.execute("ROLLBACK")
+            except Exception:
+                pass
+            return 0, str(e)
+        finally:
+            if write_con:
+                write_con.close()
 
 # Panel Lateral con Filtros
 st.sidebar.header("🔍 Filtrar Análisis")
 
 if st.sidebar.button("🚪 Cerrar Sesión", type="secondary", use_container_width=True):
-    st.session_state["password_correct"] = False
+    st.session_state.pop("password_correct", None)
     st.rerun()
 
 if st.sidebar.button("🔄 Resetear Sesión", type="secondary", use_container_width=True,
@@ -444,22 +480,35 @@ try:
 except Exception as e:
     selected_op_types = []
 
+def _sql_str(val: str) -> str:
+    """Escapes a string value for safe embedding in a SQL literal (doubles single quotes)."""
+    return str(val).replace("'", "''")
+
 def build_where_clause():
-    """Construye la cláusula WHERE según los filtros seleccionados"""
+    """Construye la cláusula WHERE según los filtros seleccionados.
+    Los valores de cadena se escapan con _sql_str para prevenir inyección SQL."""
     conditions = []
-    
+
     if selected_months:
-        month_list = "','".join(selected_months)
+        month_list = "','".join(_sql_str(m) for m in selected_months)
         conditions.append(f"MES IN ('{month_list}')")
-    
+
     if selected_years:
-        year_list = ",".join(map(str, selected_years))
-        conditions.append(f"YEAR IN ({year_list})")
-    
+        # Cast to int — rejects any non-numeric value that could sneak in
+        safe_years = []
+        for y in selected_years:
+            try:
+                safe_years.append(int(y))
+            except (ValueError, TypeError):
+                pass
+        if safe_years:
+            year_list = ",".join(str(y) for y in safe_years)
+            conditions.append(f"YEAR IN ({year_list})")
+
     if selected_op_types:
-        op_list = "','".join(selected_op_types)
+        op_list = "','".join(_sql_str(t) for t in selected_op_types)
         conditions.append(f"\"TIPO OPERACION\" IN ('{op_list}')")
-    
+
     if conditions:
         return "WHERE " + " AND ".join(conditions)
     return ""
@@ -507,9 +556,6 @@ with st.sidebar.expander("📤 Actualizar Datos en BD", expanded=False):
                 else:
                     st.success(f"✅ {rows_affected:,} registros procesados")
                     st.info("🔄 Recargando tablero…")
-                    # Refresh session bytes so the download reflects the latest DB state
-                    with open(DB_PATH, "rb") as _upsert_f:
-                        st.session_state["db_bytes"] = _upsert_f.read()
                     st.cache_resource.clear()
                     st.rerun()
 
@@ -525,16 +571,17 @@ with st.sidebar.expander("⬇️ Descargar Base de Datos", expanded=False):
         "En la próxima sesión, suba el **.db** en la pantalla de inicio "
         "para restaurar su base de datos sin re-subir el CSV."
     )
-    if st.session_state.get("db_bytes"):
-        st.download_button(
-            label="⬇️ Descargar bmc_data.db",
-            data=st.session_state["db_bytes"],
-            file_name="bmc_data.db",
-            mime="application/octet-stream",
-            use_container_width=True,
-            key="sidebar_download_db",
-            help="Guarde este archivo en su PC para restaurarlo en futuras sesiones"
-        )
+    if os.path.exists(DB_PATH):
+        with open(DB_PATH, "rb") as _sidebar_f:
+            st.download_button(
+                label="⬇️ Descargar bmc_data.db",
+                data=_sidebar_f.read(),
+                file_name="bmc_data.db",
+                mime="application/octet-stream",
+                use_container_width=True,
+                key="sidebar_download_db",
+                help="Guarde este archivo en su PC para restaurarlo en futuras sesiones"
+            )
     else:
         st.warning("Base de datos no disponible en esta sesión.")
 
@@ -2188,7 +2235,12 @@ with tabs[3]:
             help="Seleccione un cliente para ver cómo los datos le benefician"
         )
         
-        client_nit = client_list_df[client_list_df['client_name'] == selected_client]['client_nit'].values[0]
+        _nit_rows = client_list_df[client_list_df['client_name'] == selected_client]['client_nit']
+        if _nit_rows.empty:
+            st.warning("Cliente no encontrado. Seleccione otro.")
+            st.stop()
+        # Escape for SQL embedding (prevents injection if data contains quotes)
+        client_nit = _sql_str(str(_nit_rows.values[0]))
         
         st.markdown(f"## 📊 Perspectivas para: {selected_client}")
         
@@ -2585,8 +2637,16 @@ with tabs[4]:
             """)
         
         dow_query = f"""
-            SELECT 
-                DAYNAME(TRY_CAST("FECHA REGISTRO" AS DATE)) as day_of_week,
+            SELECT
+                CASE EXTRACT(ISODOW FROM TRY_CAST("FECHA REGISTRO" AS DATE))
+                    WHEN 1 THEN 'Monday'
+                    WHEN 2 THEN 'Tuesday'
+                    WHEN 3 THEN 'Wednesday'
+                    WHEN 4 THEN 'Thursday'
+                    WHEN 5 THEN 'Friday'
+                    WHEN 6 THEN 'Saturday'
+                    WHEN 7 THEN 'Sunday'
+                END AS day_of_week,
                 COUNT(*) as operations,
                 SUM(COMISION) as commission_earnings,
                 AVG(COMISION) as avg_commission
