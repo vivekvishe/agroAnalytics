@@ -5,6 +5,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import os
 import tempfile
+import uuid
 from datetime import datetime, timedelta
 import hashlib
 
@@ -99,10 +100,9 @@ st.markdown("""
 # On the server, a session-specific temp file is used so nothing persists after the session ends.
 # If DB_PATH env var is set (custom deployment), that path is used instead.
 if "db_temp_path" not in st.session_state:
-    _fd, _tmp_path = tempfile.mkstemp(suffix=".db", prefix="bmc_session_")
-    os.close(_fd)
-    os.unlink(_tmp_path)  # Remove the empty placeholder; DuckDB will create the real file
-    st.session_state["db_temp_path"] = _tmp_path
+    # Use uuid to generate a unique path without creating a file (avoids mkstemp race conditions)
+    _tmp_name = f"bmc_{uuid.uuid4().hex}.db"
+    st.session_state["db_temp_path"] = os.path.join(tempfile.gettempdir(), _tmp_name)
 
 if "db_bytes" not in st.session_state:
     st.session_state["db_bytes"] = None
@@ -111,8 +111,14 @@ DB_PATH = os.environ.get("DB_PATH", st.session_state["db_temp_path"])
 
 # If session has DB bytes but the temp file was cleaned up by the OS, recreate it
 if st.session_state["db_bytes"] is not None and not os.path.exists(DB_PATH):
-    with open(DB_PATH, "wb") as _recreate_f:
-        _recreate_f.write(st.session_state["db_bytes"])
+    try:
+        with open(DB_PATH, "wb") as _recreate_f:
+            _recreate_f.write(st.session_state["db_bytes"])
+    except Exception as _recreate_err:
+        st.error(f"❌ No se pudo restaurar la base de datos temporal: {_recreate_err}")
+        st.session_state["db_bytes"] = None
+        st.session_state.pop("db_temp_path", None)
+        st.rerun()
 
 # If the database is not found (no session bytes and no temp file), prompt the user
 if st.session_state["db_bytes"] is None and not os.path.exists(DB_PATH):
@@ -181,6 +187,13 @@ if st.session_state["db_bytes"] is None and not os.path.exists(DB_PATH):
                     # Strip leading/trailing spaces from all column names
                     init_df.columns = init_df.columns.str.strip()
 
+                    # If a stale temp file exists from a previous failed attempt, remove it first
+                    if os.path.exists(DB_PATH):
+                        try:
+                            os.unlink(DB_PATH)
+                        except Exception:
+                            pass
+
                     # Create the DuckDB database in the session temp file (not app directory)
                     bootstrap_con = duckdb.connect(DB_PATH, read_only=False)
                     bootstrap_con.register("_init_data", init_df)
@@ -199,7 +212,11 @@ if st.session_state["db_bytes"] is None and not os.path.exists(DB_PATH):
                     _created_cols = len(init_df.columns)
 
                 except Exception as e:
+                    # Reset temp path so next attempt gets a fresh unique path
+                    st.session_state.pop("db_temp_path", None)
+                    st.session_state["db_bytes"] = None
                     st.error(f"❌ Error al crear la base de datos: {str(e)}")
+                    st.caption("Intente subir el archivo nuevamente. Si el error persiste, verifique que el archivo no esté dañado.")
                     st.stop()
 
             # ── DB created — offer download before loading dashboard ──────────
