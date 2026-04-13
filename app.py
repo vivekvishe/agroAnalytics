@@ -4,6 +4,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import os
+import tempfile
 from datetime import datetime, timedelta
 import hashlib
 
@@ -93,19 +94,32 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# DB path resolution (in priority order):
-# 1. DB_PATH environment variable
-# 2. Same folder as app.py (default - works on Streamlit Cloud)
-# 3. File uploader (for Windows/other users who have the db elsewhere)
-_default_db = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bmc_data.db")
-DB_PATH = os.environ.get("DB_PATH", _default_db)
+# DB path resolution:
+# The database is stored ONLY on the user's local machine (downloaded as .db file).
+# On the server, a session-specific temp file is used so nothing persists after the session ends.
+# If DB_PATH env var is set (custom deployment), that path is used instead.
+if "db_temp_path" not in st.session_state:
+    _fd, _tmp_path = tempfile.mkstemp(suffix=".db", prefix="bmc_session_")
+    os.close(_fd)
+    os.unlink(_tmp_path)  # Remove the empty placeholder; DuckDB will create the real file
+    st.session_state["db_temp_path"] = _tmp_path
 
-# If the database is not found, let the user create it from a CSV / Excel file
-if not os.path.exists(DB_PATH):
+if "db_bytes" not in st.session_state:
+    st.session_state["db_bytes"] = None
+
+DB_PATH = os.environ.get("DB_PATH", st.session_state["db_temp_path"])
+
+# If session has DB bytes but the temp file was cleaned up by the OS, recreate it
+if st.session_state["db_bytes"] is not None and not os.path.exists(DB_PATH):
+    with open(DB_PATH, "wb") as _recreate_f:
+        _recreate_f.write(st.session_state["db_bytes"])
+
+# If the database is not found (no session bytes and no temp file), prompt the user
+if st.session_state["db_bytes"] is None and not os.path.exists(DB_PATH):
     st.markdown("""
         <div style='text-align: center; padding: 40px 0;'>
             <h2>🗄️ Base de Datos No Encontrada</h2>
-            <p style='color: #666;'>No se encontró <code>bmc_data.db</code> en el servidor.</p>
+            <p style='color: #666;'>No hay base de datos activa en esta sesión.</p>
             <p>Restaure su base de datos guardada <strong>(.db)</strong> o cree una nueva desde un archivo <strong>CSV/Excel</strong>.</p>
         </div>
     """, unsafe_allow_html=True)
@@ -127,9 +141,12 @@ if not os.path.exists(DB_PATH):
         if db_restore_file is not None:
             with st.spinner("⏳ Restaurando base de datos…"):
                 try:
+                    _restore_bytes = db_restore_file.read()
                     st.cache_resource.clear()
                     with open(DB_PATH, "wb") as _f:
-                        _f.write(db_restore_file.read())
+                        _f.write(_restore_bytes)
+                    # Keep bytes in session so temp file can be rebuilt if OS cleans it up
+                    st.session_state["db_bytes"] = _restore_bytes
                 except Exception as e:
                     st.error(f"❌ Error al restaurar la base de datos: {str(e)}")
                     st.stop()
@@ -164,7 +181,7 @@ if not os.path.exists(DB_PATH):
                     # Strip leading/trailing spaces from all column names
                     init_df.columns = init_df.columns.str.strip()
 
-                    # Create the DuckDB database next to app.py
+                    # Create the DuckDB database in the session temp file (not app directory)
                     bootstrap_con = duckdb.connect(DB_PATH, read_only=False)
                     bootstrap_con.register("_init_data", init_df)
                     bootstrap_con.execute(
@@ -172,6 +189,11 @@ if not os.path.exists(DB_PATH):
                         "SELECT * FROM _init_data"
                     )
                     bootstrap_con.close()
+
+                    # Store DB bytes in session so the server file can be reconstructed
+                    # across reruns without persisting a permanent copy on the server
+                    with open(DB_PATH, "rb") as _init_f:
+                        st.session_state["db_bytes"] = _init_f.read()
 
                     _created_rows = len(init_df)
                     _created_cols = len(init_df.columns)
@@ -193,12 +215,9 @@ if not os.path.exists(DB_PATH):
                 "para restaurar su base de datos sin necesidad de re-subir el CSV."
             )
 
-            with open(DB_PATH, "rb") as _f:
-                _db_bytes = _f.read()
-
             st.download_button(
                 label="⬇️ Descargar bmc_data.db (recomendado)",
-                data=_db_bytes,
+                data=st.session_state["db_bytes"],
                 file_name="bmc_data.db",
                 mime="application/octet-stream",
                 type="primary",
@@ -215,8 +234,8 @@ if not os.path.exists(DB_PATH):
             st.info(
                 "💡 El archivo debe contener las columnas de operaciones del BMC "
                 "(OPERACION, CLIENTE, COMISION, VALOR NEGOCIO, etc.).\n\n"
-                "La base de datos se guardará como **bmc_data.db** en el servidor "
-                "y estará disponible durante toda la sesión actual."
+                "La base de datos se crea temporalmente en el servidor solo para esta sesión. "
+                "**Descárguela a su PC** para guardarla de forma permanente."
             )
             st.stop()
 
@@ -312,15 +331,36 @@ if st.sidebar.button("🚪 Cerrar Sesión", type="secondary", use_container_widt
     st.session_state["password_correct"] = False
     st.rerun()
 
+if st.sidebar.button("🔄 Resetear Sesión", type="secondary", use_container_width=True,
+                     help="Borra la base de datos de la sesión y vuelve a la pantalla de carga"):
+    # Delete the temp DB file from the server if it exists
+    _temp_path = st.session_state.get("db_temp_path")
+    if _temp_path and os.path.exists(_temp_path):
+        try:
+            os.unlink(_temp_path)
+        except Exception:
+            pass
+    # Clear all session state except login so the user returns to the load screen
+    _keep = {"password_correct": st.session_state.get("password_correct")}
+    st.session_state.clear()
+    st.session_state.update(_keep)
+    st.cache_resource.clear()
+    st.rerun()
+
 st.sidebar.markdown("---")
+
+# Initialise filter keys to empty list on first load so no filters are pre-applied
+for _key in ("filter_months", "filter_years", "filter_op_types"):
+    if _key not in st.session_state:
+        st.session_state[_key] = []
 
 try:
     months_query = """
-        SELECT DISTINCT MES 
-        FROM operaciones_bmc 
+        SELECT DISTINCT MES
+        FROM operaciones_bmc
         WHERE MES IS NOT NULL
-        ORDER BY 
-            CASE 
+        ORDER BY
+            CASE
                 WHEN MES LIKE 'ene%' THEN 1
                 WHEN MES LIKE 'feb%' THEN 2
                 WHEN MES LIKE 'mar%' THEN 3
@@ -337,14 +377,14 @@ try:
             END
     """
     months_df = safe_query(months_query, "filtro de meses")
-    
+
     if not months_df.empty:
         months = months_df['MES'].tolist()
         selected_months = st.sidebar.multiselect(
-            "📅 Seleccionar Meses", 
-            options=months, 
-            default=months,
-            help="Filtrar datos por meses específicos"
+            "📅 Seleccionar Meses",
+            options=months,
+            key="filter_months",
+            help="Filtrar datos por meses específicos. Sin selección = todos los meses."
         )
     else:
         selected_months = []
@@ -356,14 +396,14 @@ except Exception as e:
 try:
     years_query = "SELECT DISTINCT YEAR FROM operaciones_bmc WHERE YEAR IS NOT NULL ORDER BY YEAR DESC"
     years_df = safe_query(years_query, "filtro de años")
-    
+
     if not years_df.empty:
         years = years_df['YEAR'].tolist()
         selected_years = st.sidebar.multiselect(
             "📆 Seleccionar Años",
             options=years,
-            default=years,
-            help="Filtrar datos por años específicos"
+            key="filter_years",
+            help="Filtrar datos por años específicos. Sin selección = todos los años."
         )
     else:
         selected_years = []
@@ -373,14 +413,14 @@ except Exception as e:
 try:
     op_types_query = "SELECT DISTINCT \"TIPO OPERACION\" FROM operaciones_bmc WHERE \"TIPO OPERACION\" IS NOT NULL"
     op_types_df = safe_query(op_types_query, "tipos de operación")
-    
+
     if not op_types_df.empty:
         op_types = op_types_df['TIPO OPERACION'].tolist()
         selected_op_types = st.sidebar.multiselect(
             "📋 Tipo de Operación",
             options=op_types,
-            default=op_types,
-            help="RSG: Sin incentivo, REX: Exportación, RGC: Con incentivo"
+            key="filter_op_types",
+            help="RSG: Sin incentivo, REX: Exportación, RGC: Con incentivo. Sin selección = todos los tipos."
         )
     else:
         selected_op_types = []
@@ -450,6 +490,9 @@ with st.sidebar.expander("📤 Actualizar Datos en BD", expanded=False):
                 else:
                     st.success(f"✅ {rows_affected:,} registros procesados")
                     st.info("🔄 Recargando tablero…")
+                    # Refresh session bytes so the download reflects the latest DB state
+                    with open(DB_PATH, "rb") as _upsert_f:
+                        st.session_state["db_bytes"] = _upsert_f.read()
                     st.cache_resource.clear()
                     st.rerun()
 
@@ -465,20 +508,18 @@ with st.sidebar.expander("⬇️ Descargar Base de Datos", expanded=False):
         "En la próxima sesión, suba el **.db** en la pantalla de inicio "
         "para restaurar su base de datos sin re-subir el CSV."
     )
-    try:
-        with open(DB_PATH, "rb") as _sidebar_f:
-            _sidebar_db_bytes = _sidebar_f.read()
+    if st.session_state.get("db_bytes"):
         st.download_button(
             label="⬇️ Descargar bmc_data.db",
-            data=_sidebar_db_bytes,
+            data=st.session_state["db_bytes"],
             file_name="bmc_data.db",
             mime="application/octet-stream",
             use_container_width=True,
             key="sidebar_download_db",
             help="Guarde este archivo en su PC para restaurarlo en futuras sesiones"
         )
-    except Exception as _e:
-        st.error(f"❌ No se puede leer el archivo: {str(_e)}")
+    else:
+        st.warning("Base de datos no disponible en esta sesión.")
 
 # Título Principal
 st.title("🌾 Agro Analytics BMC - Tablero de Desempeño y Estrategia")
