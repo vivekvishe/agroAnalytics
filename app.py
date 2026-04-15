@@ -370,6 +370,19 @@ def upsert_to_db(db_path, new_df, existing_con=None):
 
             upload_df = new_df[valid_cols].copy()
 
+            # Convert date/timestamp columns to proper datetime objects so DuckDB
+            # doesn't reject strings like "2/01/2025" when inserting into DATE cols.
+            date_cols = write_con.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name = 'operaciones_bmc' "
+                "AND data_type IN ('DATE', 'TIMESTAMP', 'TIMESTAMP WITH TIME ZONE')"
+            ).fetchdf()["column_name"].tolist()
+            for col in date_cols:
+                if col in upload_df.columns:
+                    upload_df[col] = pd.to_datetime(
+                        upload_df[col], dayfirst=True, errors="coerce"
+                    )
+
             # Register the dataframe as a temporary view
             write_con.register("_staging", upload_df)
 
@@ -548,10 +561,32 @@ st.sidebar.markdown("---")
 with st.sidebar.expander("📤 Actualizar Datos en BD", expanded=False):
     st.markdown("Suba un archivo **CSV o Excel** con nuevas operaciones.")
     st.caption(
+        "El archivo debe tener el **mismo formato que el CSV original** "
+        "(separador `;`, mismas columnas).\n\n"
         "• Registros con `OPERACION` existente → **actualizados**\n"
         "• Registros nuevos → **insertados**\n"
         "• Columnas no reconocidas son ignoradas."
     )
+
+    # Show expected columns and offer a template download matching the DB format
+    try:
+        _db_cols = con.execute(
+            "SELECT * FROM operaciones_bmc LIMIT 0"
+        ).df().columns.tolist()
+        with st.expander("📋 Formato requerido del CSV", expanded=False):
+            st.caption("El archivo debe tener estas columnas (en cualquier orden):")
+            st.code(", ".join(_db_cols), language=None)
+            _template_csv = ",".join(_db_cols) + "\n"
+            st.download_button(
+                label="⬇️ Descargar plantilla CSV",
+                data=_template_csv,
+                file_name="plantilla_actualizacion.csv",
+                mime="text/csv",
+                use_container_width=True,
+                key="download_template_csv",
+            )
+    except Exception:
+        pass
 
     upsert_file = st.file_uploader(
         "Seleccionar archivo",
@@ -571,7 +606,24 @@ with st.sidebar.expander("📤 Actualizar Datos en BD", expanded=False):
             upload_df.columns = upload_df.columns.str.strip()
 
             st.success(f"📊 **{len(upload_df):,} registros** listos para cargar")
-            st.markdown(f"Columnas detectadas: `{len(upload_df.columns)}`")
+
+            # Column match validation against DB
+            try:
+                _expected = con.execute(
+                    "SELECT * FROM operaciones_bmc LIMIT 0"
+                ).df().columns.tolist()
+                _matched = [c for c in upload_df.columns if c in _expected]
+                _missing = [c for c in _expected if c not in upload_df.columns]
+                _extra = [c for c in upload_df.columns if c not in _expected]
+                st.markdown(
+                    f"Columnas coincidentes: **{len(_matched)}/{len(_expected)}**"
+                )
+                if _missing:
+                    st.warning(f"Columnas faltantes (se dejarán vacías): `{', '.join(_missing)}`")
+                if _extra:
+                    st.caption(f"Columnas ignoradas: `{', '.join(_extra)}`")
+            except Exception:
+                st.markdown(f"Columnas detectadas: `{len(upload_df.columns)}`")
 
             with st.expander("🔍 Vista previa (5 filas)", expanded=False):
                 st.dataframe(upload_df.head(5), width="stretch")
