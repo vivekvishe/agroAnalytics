@@ -197,6 +197,34 @@ if not os.path.exists(DB_PATH):
                         with open(_csv_tmp, "wb") as _cf:
                             _cf.write(init_file.read())
 
+                        # Detect encoding: try UTF-8 first, fall back to latin-1.
+                        # Files from Colombian/Spanish financial systems are often
+                        # ISO-8859 / latin-1 (e.g. names with Ñ, á, é).
+                        # DuckDB's sampling phase breaks on non-UTF-8 bytes and also
+                        # misdetects the delimiter as a side-effect, so we normalise
+                        # to UTF-8 first using 64 KB chunks (memory-efficient).
+                        _src_enc = "utf-8"
+                        for _enc in ("utf-8", "latin-1", "cp1252"):
+                            try:
+                                with open(_csv_tmp, "r", encoding=_enc, errors="strict") as _t:
+                                    _t.read(65536)
+                                _src_enc = _enc
+                                break
+                            except (UnicodeDecodeError, LookupError):
+                                continue
+
+                        if _src_enc != "utf-8":
+                            _utf8_tmp = _csv_tmp + ".utf8.csv"
+                            with open(_csv_tmp, "r", encoding=_src_enc, errors="replace") as _src, \
+                                 open(_utf8_tmp, "w", encoding="utf-8") as _dst:
+                                while True:
+                                    _chunk = _src.read(65536)
+                                    if not _chunk:
+                                        break
+                                    _dst.write(_chunk)
+                            os.unlink(_csv_tmp)
+                            _csv_tmp = _utf8_tmp
+
                         _csv_sql = _csv_tmp.replace("\\", "/")  # safe on Windows too
                         bootstrap_con = duckdb.connect(DB_PATH, read_only=False)
                         bootstrap_con.execute(
