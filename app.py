@@ -404,6 +404,7 @@ def upsert_to_db(db_path, new_df, existing_con=None):
                 f"SELECT {col_list} FROM _staging"
             )
             write_con.execute("COMMIT")
+            write_con.execute("CHECKPOINT")
             write_con.unregister("_staging")
             return len(upload_df), None
 
@@ -413,6 +414,51 @@ def upsert_to_db(db_path, new_df, existing_con=None):
                     write_con.execute("ROLLBACK")
             except Exception:
                 pass
+            return 0, str(e)
+        finally:
+            if write_con:
+                write_con.close()
+
+def load_referenciadores_to_db(db_path, df, existing_con=None):
+    """
+    Create or replace the referenciadores table from a DataFrame.
+    Expected columns: CODIGO, IDENTIFICACIÓN, NOMBRE.
+    Returns (rows_loaded, error_message).
+    """
+    with _db_write_lock:
+        if existing_con is not None:
+            try:
+                existing_con.close()
+            except Exception:
+                pass
+        get_connection.clear()
+
+        write_con = None
+        try:
+            write_con = duckdb.connect(db_path, read_only=False)
+            df = df.copy()
+            df.columns = df.columns.str.strip()
+            # Normalise accent: IDENTIFICACIÓN → IDENTIFICACION
+            df.columns = [c.replace("IDENTIFICACIÓN", "IDENTIFICACION") for c in df.columns]
+            required = {"CODIGO", "IDENTIFICACION", "NOMBRE"}
+            missing = required - set(df.columns)
+            if missing:
+                return 0, f"Faltan columnas requeridas: {', '.join(sorted(missing))}"
+            df = df[["CODIGO", "IDENTIFICACION", "NOMBRE"]]
+            df["CODIGO"] = pd.to_numeric(df["CODIGO"], errors="coerce").astype("Int64")
+            df["IDENTIFICACION"] = df["IDENTIFICACION"].astype(str).str.strip()
+            df["NOMBRE"] = df["NOMBRE"].astype(str).str.strip()
+            write_con.register("_ref_staging", df)
+            write_con.execute("""
+                CREATE OR REPLACE TABLE referenciadores AS
+                SELECT CODIGO, IDENTIFICACION, NOMBRE
+                FROM _ref_staging
+            """)
+            write_con.unregister("_ref_staging")
+            rows = write_con.execute("SELECT COUNT(*) FROM referenciadores").fetchone()[0]
+            write_con.execute("CHECKPOINT")
+            return rows, None
+        except Exception as e:
             return 0, str(e)
         finally:
             if write_con:
@@ -639,6 +685,71 @@ with st.sidebar.expander("📤 Actualizar Datos en BD", expanded=False):
                     st.cache_resource.clear()
                     st.rerun()
 
+        except Exception as e:
+            st.error(f"❌ Error al leer archivo: {str(e)}")
+
+# ── Sidebar: Cargar Referenciadores ───────────────────────────────────────
+st.sidebar.markdown("---")
+with st.sidebar.expander("👥 Cargar Referenciadores", expanded=False):
+    st.markdown("Suba el archivo **CSV** con la tabla de referenciadores.")
+    st.caption(
+        "El archivo debe tener las columnas: **CODIGO**, **IDENTIFICACIÓN**, **NOMBRE**.\n\n"
+        "• `CODIGO` es la clave que se relaciona con la columna `REFERENCIADOR` de las operaciones.\n"
+        "• La tabla se reemplaza completamente cada vez que sube un archivo nuevo."
+    )
+
+    _ref_template = "CODIGO,IDENTIFICACIÓN,NOMBRE\n"
+    st.download_button(
+        label="⬇️ Descargar plantilla CSV",
+        data=_ref_template,
+        file_name="plantilla_referenciadores.csv",
+        mime="text/csv",
+        use_container_width=True,
+        key="download_ref_template",
+    )
+
+    # Show current table row count if it exists
+    try:
+        _ref_count = con.execute("SELECT COUNT(*) FROM referenciadores").fetchone()[0]
+        st.info(f"Tabla actual: **{_ref_count:,} referenciadores** cargados.")
+    except Exception:
+        st.warning("La tabla de referenciadores aún no existe.")
+
+    ref_file = st.file_uploader(
+        "Seleccionar archivo CSV de referenciadores",
+        type=["csv", "xlsx", "xls"],
+        key="ref_upload_file",
+        label_visibility="collapsed",
+    )
+
+    # Show persistent result message from a previous upload (survives rerun)
+    if st.session_state.get("ref_upload_result"):
+        result = st.session_state.pop("ref_upload_result")
+        if result["ok"]:
+            st.success(f"✅ {result['rows']:,} referenciadores cargados correctamente.")
+        else:
+            st.error(f"❌ Error al cargar referenciadores: {result['error']}")
+
+    if ref_file is not None:
+        try:
+            if ref_file.name.lower().endswith(".csv"):
+                ref_df = pd.read_csv(ref_file, sep=None, engine="python", encoding_errors="replace")
+            else:
+                ref_df = pd.read_excel(ref_file)
+            ref_df.columns = ref_df.columns.str.strip()
+            st.success(f"📊 **{len(ref_df):,} filas** detectadas")
+            with st.expander("🔍 Vista previa (5 filas)", expanded=False):
+                st.dataframe(ref_df.head(5), use_container_width=True)
+            if st.button("💾 Confirmar y Cargar Referenciadores", type="primary",
+                         key="confirm_ref_upload", use_container_width=True):
+                with st.spinner("Cargando referenciadores…"):
+                    rows_loaded, error = load_referenciadores_to_db(DB_PATH, ref_df, existing_con=con)
+                if error:
+                    st.session_state["ref_upload_result"] = {"ok": False, "error": error}
+                else:
+                    st.session_state["ref_upload_result"] = {"ok": True, "rows": rows_loaded}
+                    st.cache_resource.clear()
+                st.rerun()
         except Exception as e:
             st.error(f"❌ Error al leer archivo: {str(e)}")
 
@@ -949,32 +1060,68 @@ with tabs[0]:
     
     with col_ref1:
         referenciador_where = filter_query + (" AND " if filter_query else "WHERE ") + "REFERENCIADOR IS NOT NULL AND REFERENCIADOR != 0"
-        referenciador_query = f"""
-            SELECT 
-                REFERENCIADOR,
-                COUNT(*) as total_operations,
-                SUM(COMISION) as total_commission,
-                SUM("VALOR NEGOCIO") as total_volume,
-                AVG(COMISION) as avg_commission_per_op,
-                SUM(COMISION * ("% REF VENTA" / 100.0)) + SUM(COMISION * ("% REF COMPRA" / 100.0)) as referenciador_earnings
-            FROM operaciones_bmc
-            {referenciador_where}
-            GROUP BY REFERENCIADOR
-            ORDER BY total_commission DESC
-        """
-        
+
+        # Use LEFT JOIN with referenciadores lookup table if it has been loaded
+        _ref_lookup_exists = False
+        try:
+            con.execute("SELECT 1 FROM referenciadores LIMIT 0")
+            _ref_lookup_exists = True
+        except Exception:
+            pass
+
+        if _ref_lookup_exists:
+            referenciador_query = f"""
+                SELECT
+                    sub.REFERENCIADOR,
+                    COALESCE(r.NOMBRE, CAST(sub.REFERENCIADOR AS VARCHAR)) AS NOMBRE_REF,
+                    sub.total_operations,
+                    sub.total_commission,
+                    sub.total_volume,
+                    sub.avg_commission_per_op,
+                    sub.referenciador_earnings
+                FROM (
+                    SELECT
+                        REFERENCIADOR,
+                        COUNT(*) as total_operations,
+                        SUM(COMISION) as total_commission,
+                        SUM("VALOR NEGOCIO") as total_volume,
+                        AVG(COMISION) as avg_commission_per_op,
+                        SUM(COMISION * ("% REF VENTA" / 100.0)) + SUM(COMISION * ("% REF COMPRA" / 100.0)) as referenciador_earnings
+                    FROM operaciones_bmc
+                    {referenciador_where}
+                    GROUP BY REFERENCIADOR
+                ) sub
+                LEFT JOIN referenciadores r ON sub.REFERENCIADOR = r.CODIGO
+                ORDER BY sub.total_commission DESC
+            """
+        else:
+            referenciador_query = f"""
+                SELECT
+                    REFERENCIADOR,
+                    CAST(REFERENCIADOR AS VARCHAR) AS NOMBRE_REF,
+                    COUNT(*) as total_operations,
+                    SUM(COMISION) as total_commission,
+                    SUM("VALOR NEGOCIO") as total_volume,
+                    AVG(COMISION) as avg_commission_per_op,
+                    SUM(COMISION * ("% REF VENTA" / 100.0)) + SUM(COMISION * ("% REF COMPRA" / 100.0)) as referenciador_earnings
+                FROM operaciones_bmc
+                {referenciador_where}
+                GROUP BY REFERENCIADOR
+                ORDER BY total_commission DESC
+            """
+
         with st.expander("🔍 Ver Consulta SQL", expanded=False):
             st.code(referenciador_query, language="sql")
-        
+
         referenciador_df = safe_query(referenciador_query, "todos los referenciadores")
-        
+
         if not referenciador_df.empty:
             top_10_ref_df = referenciador_df.head(10).copy()
             top_10_ref_df['REFERENCIADOR'] = top_10_ref_df['REFERENCIADOR'].astype(str)
-            
+
             fig_ref = go.Figure()
             fig_ref.add_trace(go.Bar(
-                x=top_10_ref_df['REFERENCIADOR'],
+                x=top_10_ref_df['NOMBRE_REF'],
                 y=top_10_ref_df['total_commission'],
                 marker=dict(
                     color=top_10_ref_df['total_commission'],
@@ -985,20 +1132,21 @@ with tabs[0]:
                 text=top_10_ref_df['total_commission'],
                 texttemplate='$%{text:,.0f}',
                 textposition='outside',
-                hovertemplate='<b>Cód. Ref: %{x}</b><br>' +
+                hovertemplate='<b>%{x}</b><br>' +
+                             'Código: %{customdata[3]}<br>' +
                              'Comisión Total: $%{y:,.0f}<br>' +
                              'Operaciones: %{customdata[0]:,.0f}<br>' +
                              'Prom por Op: $%{customdata[1]:,.0f}<br>' +
                              'Ganancias Est.: $%{customdata[2]:,.0f}<extra></extra>',
-                customdata=top_10_ref_df[['total_operations', 'avg_commission_per_op', 'referenciador_earnings']]
+                customdata=top_10_ref_df[['total_operations', 'avg_commission_per_op', 'referenciador_earnings', 'REFERENCIADOR']]
             ))
-            
+
             fig_ref.update_layout(
                 title={
                     'text': "Top 10 Impulsores de Comisión - Volumen Generado",
                     'font': {'size': 16, 'color': '#2c3e50'}
                 },
-                xaxis_title="Código Referenciador",
+                xaxis_title="Referenciador",
                 yaxis_title="Total Comisiones Ganadas ($) - Generadas para USTED",
                 height=500,
                 margin=dict(l=80, r=40, t=80, b=80),
@@ -1008,20 +1156,21 @@ with tabs[0]:
                 xaxis=dict(showgrid=False, tickangle=-45),
                 yaxis=dict(showgrid=True, gridcolor='lightgray', tickformat='$,.0f')
             )
-            
+
             st.plotly_chart(fig_ref, width="stretch")
             st.caption("💡 El gráfico muestra el top 10 para mayor claridad - lista completa en la tabla inferior")
         else:
             st.info("No hay datos de referenciadores disponibles")
-    
+
     with col_ref2:
         if not referenciador_df.empty:
             st.markdown(f"**Métricas de Desempeño Completas - Todos los {len(referenciador_df)} Referenciadores**")
-            
+
             display_df = referenciador_df.copy()
             display_df['REFERENCIADOR'] = display_df['REFERENCIADOR'].astype(str)
-            display_df = display_df[['REFERENCIADOR', 'total_operations', 'total_commission', 'total_volume', 'referenciador_earnings']]
-            
+            display_df = display_df[['REFERENCIADOR', 'NOMBRE_REF', 'total_operations', 'total_commission', 'total_volume', 'referenciador_earnings']]
+            display_df = display_df.rename(columns={'NOMBRE_REF': 'NOMBRE'})
+
             st.dataframe(
                 display_df.style.format({
                     'total_operations': '{:,.0f}',
