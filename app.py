@@ -7,6 +7,8 @@ import os
 import tempfile
 import uuid
 import threading
+import unicodedata
+import re
 from datetime import datetime, timedelta
 import hashlib
 
@@ -437,9 +439,16 @@ def load_referenciadores_to_db(db_path, df, existing_con=None):
         try:
             write_con = duckdb.connect(db_path, read_only=False)
             df = df.copy()
-            df.columns = df.columns.str.strip()
-            # Normalise accent: IDENTIFICACIÓN → IDENTIFICACION
-            df.columns = [c.replace("IDENTIFICACIÓN", "IDENTIFICACION") for c in df.columns]
+            # Strip accents and whitespace from column names so IDENTIFICACIÓN,
+            # IDENTIFICACI�N (corrupted encoding), etc. all become IDENTIFICACION
+            def _normalize_col(s):
+                s = unicodedata.normalize("NFKD", str(s))
+                s = s.encode("ascii", "ignore").decode("ascii")
+                s = s.strip().upper()
+                # Fixes IDENTIFICACIN (accent dropped by bad encoding) and any similar variant
+                s = re.sub(r"\bIDENTIFICACI.?N\b", "IDENTIFICACION", s)
+                return s
+            df.columns = [_normalize_col(c) for c in df.columns]
             required = {"CODIGO", "IDENTIFICACION", "NOMBRE"}
             missing = required - set(df.columns)
             if missing:
