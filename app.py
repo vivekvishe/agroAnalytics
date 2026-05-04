@@ -325,6 +325,14 @@ def get_connection(db_path):
 
 con = get_connection(DB_PATH)
 
+# True when the referenciadores lookup table has been loaded
+_ref_lookup_exists = False
+try:
+    con.execute("SELECT 1 FROM referenciadores LIMIT 0")
+    _ref_lookup_exists = True
+except Exception:
+    pass
+
 def safe_query(query, description="consulta", params=None):
     """Ejecuta consulta SQL con manejo de errores. params es una lista de valores para consultas parametrizadas."""
     try:
@@ -707,16 +715,6 @@ with st.sidebar.expander("👥 Cargar Referenciadores", expanded=False):
         "• La tabla se reemplaza completamente cada vez que sube un archivo nuevo."
     )
 
-    _ref_template = "CODIGO,IDENTIFICACIÓN,NOMBRE\n"
-    st.download_button(
-        label="⬇️ Descargar plantilla CSV",
-        data=_ref_template,
-        file_name="plantilla_referenciadores.csv",
-        mime="text/csv",
-        use_container_width=True,
-        key="download_ref_template",
-    )
-
     # Show current table row count if it exists
     try:
         _ref_count = con.execute("SELECT COUNT(*) FROM referenciadores").fetchone()[0]
@@ -998,40 +996,89 @@ with tabs[0]:
             **Conclusión:** Estos clientes = Sus mayores cheques de pago. ¡Manténgalos contentos!
             """)
         
-        clients_query = f"""
-            SELECT 
-                CLIENTE,
-                SUM(COMISION) as commission_earnings,
-                COUNT(*) as transactions,
-                SUM("VALOR NEGOCIO") as transaction_volume,
-                AVG(COMISION / NULLIF("VALOR NEGOCIO", 0)) * 100 as avg_commission_rate
-            FROM operaciones_bmc 
-            {filter_query}
-            GROUP BY CLIENTE
-            ORDER BY commission_earnings DESC
-            LIMIT 10
-        """
-        
+        if _ref_lookup_exists:
+            clients_query = f"""
+                SELECT
+                    sub.CLIENTE,
+                    sub.commission_earnings,
+                    sub.transactions,
+                    sub.transaction_volume,
+                    sub.avg_commission_rate,
+                    sub.main_referenciador,
+                    COALESCE(r.NOMBRE, CAST(sub.main_referenciador AS VARCHAR)) AS nombre_ref
+                FROM (
+                    SELECT
+                        CLIENTE,
+                        SUM(COMISION) as commission_earnings,
+                        COUNT(*) as transactions,
+                        SUM("VALOR NEGOCIO") as transaction_volume,
+                        AVG(COMISION / NULLIF("VALOR NEGOCIO", 0)) * 100 as avg_commission_rate,
+                        mode(REFERENCIADOR) as main_referenciador
+                    FROM operaciones_bmc
+                    {filter_query}
+                    GROUP BY CLIENTE
+                    ORDER BY commission_earnings DESC
+                    LIMIT 10
+                ) sub
+                LEFT JOIN referenciadores r ON sub.main_referenciador = r.CODIGO
+            """
+        else:
+            clients_query = f"""
+                SELECT
+                    CLIENTE,
+                    SUM(COMISION) as commission_earnings,
+                    COUNT(*) as transactions,
+                    SUM("VALOR NEGOCIO") as transaction_volume,
+                    AVG(COMISION / NULLIF("VALOR NEGOCIO", 0)) * 100 as avg_commission_rate,
+                    NULL as main_referenciador,
+                    NULL as nombre_ref
+                FROM operaciones_bmc
+                {filter_query}
+                GROUP BY CLIENTE
+                ORDER BY commission_earnings DESC
+                LIMIT 10
+            """
+
         with st.expander("🔍 Ver Consulta SQL", expanded=False):
             st.code(clients_query, language="sql")
-        
+
         clients_df = safe_query(clients_query, "top clientes")
-        
+
         if not clients_df.empty:
-            fig_clients = px.bar(
-                clients_df,
-                x='commission_earnings',
-                y='CLIENTE',
-                orientation='h',
-                title="Mayores Generadores de Comisión - Sus Mejores Clientes",
-                labels={'commission_earnings': 'Comisiones Ganadas ($) - SUS INGRESOS', 'CLIENTE': 'Cliente'},
-                color='commission_earnings',
-                color_continuous_scale='Greens'
-            )
-            fig_clients.update_traces(
-                hovertemplate='<b>%{y}</b><br>💰 Le Paga: $%{x:,.0f}<br>Transacciones: %{customdata[0]}<br>Tasa Prom: %{customdata[1]:.2f}%<extra></extra>',
-                customdata=clients_df[['transactions', 'avg_commission_rate']]
-            )
+            has_ref = _ref_lookup_exists and clients_df['nombre_ref'].notna().any()
+            if has_ref:
+                fig_clients = px.bar(
+                    clients_df,
+                    x='commission_earnings',
+                    y='CLIENTE',
+                    orientation='h',
+                    color='nombre_ref',
+                    title="Mayores Generadores de Comisión - Sus Mejores Clientes",
+                    labels={
+                        'commission_earnings': 'Comisiones Ganadas ($)',
+                        'CLIENTE': 'Cliente',
+                        'nombre_ref': 'Referenciador'
+                    },
+                )
+                fig_clients.update_traces(
+                    hovertemplate='<b>%{y}</b><br>💰 Le Paga: $%{x:,.0f}<br>Referenciador: %{customdata[2]}<br>Transacciones: %{customdata[0]}<br>Tasa Prom: %{customdata[1]:.2f}%<extra></extra>',
+                    customdata=clients_df[['transactions', 'avg_commission_rate', 'nombre_ref']]
+                )
+            else:
+                fig_clients = px.bar(
+                    clients_df,
+                    x='commission_earnings',
+                    y='CLIENTE',
+                    orientation='h',
+                    title="Mayores Generadores de Comisión - Sus Mejores Clientes",
+                    labels={'commission_earnings': 'Comisiones Ganadas ($) - SUS INGRESOS', 'CLIENTE': 'Cliente'},
+                    color='commission_earnings',
+                    color_continuous_scale='Greens'
+                )
+                fig_clients.update_traces(
+                    hovertemplate='<b>%{y}</b><br>💰 Le Paga: $%{x:,.0f}<br>Transacciones: %{customdata[0]}<br>Tasa Prom: %{customdata[1]:.2f}%<extra></extra>',
+                    customdata=clients_df[['transactions', 'avg_commission_rate']]
+                )
             st.plotly_chart(fig_clients, width="stretch")
             st.caption("💰 Estos clientes generan las mayores comisiones para SU empresa")
         else:
@@ -1071,13 +1118,6 @@ with tabs[0]:
         referenciador_where = filter_query + (" AND " if filter_query else "WHERE ") + "REFERENCIADOR IS NOT NULL AND REFERENCIADOR != 0"
 
         # Use LEFT JOIN with referenciadores lookup table if it has been loaded
-        _ref_lookup_exists = False
-        try:
-            con.execute("SELECT 1 FROM referenciadores LIMIT 0")
-            _ref_lookup_exists = True
-        except Exception:
-            pass
-
         if _ref_lookup_exists:
             referenciador_query = f"""
                 SELECT
@@ -1328,35 +1368,60 @@ with tabs[1]:
             **Ejemplo:** Si un cliente que solía pagarle $50.000/año en comisiones lleva 60 días inactivo, ¡ya ha perdido ~$8.000!
             """)
         
-        churn_query = f"""
-            SELECT 
-                CLIENTE,
-                MAX("FECHA REGISTRO") as last_transaction,
-                DATE_DIFF('day', MAX(TRY_CAST("FECHA REGISTRO" AS DATE)), CURRENT_DATE) as days_inactive,
-                SUM(COMISION) as lifetime_commission,
-                COUNT(*) as total_transactions
-            FROM operaciones_bmc
-            {filter_query}
-            GROUP BY CLIENTE
-            HAVING DATE_DIFF('day', MAX(TRY_CAST("FECHA REGISTRO" AS DATE)), CURRENT_DATE) > 60
-            ORDER BY lifetime_commission DESC
-            LIMIT 15
-        """
-        
+        if _ref_lookup_exists:
+            churn_query = f"""
+                SELECT
+                    sub.CLIENTE,
+                    sub.last_transaction,
+                    sub.days_inactive,
+                    sub.lifetime_commission,
+                    sub.total_transactions,
+                    COALESCE(r.NOMBRE, CAST(sub.main_referenciador AS VARCHAR)) AS referenciador
+                FROM (
+                    SELECT
+                        CLIENTE,
+                        MAX("FECHA REGISTRO") as last_transaction,
+                        DATE_DIFF('day', MAX(TRY_CAST("FECHA REGISTRO" AS DATE)), CURRENT_DATE) as days_inactive,
+                        SUM(COMISION) as lifetime_commission,
+                        COUNT(*) as total_transactions,
+                        mode(REFERENCIADOR) as main_referenciador
+                    FROM operaciones_bmc
+                    {filter_query}
+                    GROUP BY CLIENTE
+                    HAVING DATE_DIFF('day', MAX(TRY_CAST("FECHA REGISTRO" AS DATE)), CURRENT_DATE) > 60
+                    ORDER BY lifetime_commission DESC
+                    LIMIT 15
+                ) sub
+                LEFT JOIN referenciadores r ON sub.main_referenciador = r.CODIGO
+            """
+        else:
+            churn_query = f"""
+                SELECT
+                    CLIENTE,
+                    MAX("FECHA REGISTRO") as last_transaction,
+                    DATE_DIFF('day', MAX(TRY_CAST("FECHA REGISTRO" AS DATE)), CURRENT_DATE) as days_inactive,
+                    SUM(COMISION) as lifetime_commission,
+                    COUNT(*) as total_transactions
+                FROM operaciones_bmc
+                {filter_query}
+                GROUP BY CLIENTE
+                HAVING DATE_DIFF('day', MAX(TRY_CAST("FECHA REGISTRO" AS DATE)), CURRENT_DATE) > 60
+                ORDER BY lifetime_commission DESC
+                LIMIT 15
+            """
+
         with st.expander("🔍 Ver Consulta SQL", expanded=False):
             st.code(churn_query, language="sql")
-        
+
         churn_df = safe_query(churn_query, "análisis de fuga")
-        
+
         if not churn_df.empty:
-            st.dataframe(
-                churn_df.style.format({
-                    'days_inactive': '{:.0f}',
-                    'lifetime_commission': '${:,.0f}',
-                    'total_transactions': '{:,.0f}'
-                }),
-                width="stretch"
-            )
+            fmt = {
+                'days_inactive': '{:.0f}',
+                'lifetime_commission': '${:,.0f}',
+                'total_transactions': '{:,.0f}'
+            }
+            st.dataframe(churn_df.style.format(fmt), width="stretch")
             total_at_risk = churn_df['lifetime_commission'].sum()
             st.error(f"🚨 **URGENTE:** ¡{len(churn_df)} clientes de alto valor en riesgo! Le han pagado ${total_at_risk:,.0f} en comisiones históricamente!")
             st.markdown("**Acción Requerida:** ¡Contacte a estos clientes de inmediato para evitar pérdida permanente de comisiones!")
@@ -3096,33 +3161,61 @@ with tabs[5]:
         **Ejemplo:** Si 3 clientes generan el 80% de la comisión, perder uno podría ser devastador.
         """)
     
-    pareto_query = f"""
-        SELECT 
-            CLIENTE,
-            SUM(COMISION) as commission_earnings
-        FROM operaciones_bmc
-        {filter_query}
-        GROUP BY CLIENTE
-        ORDER BY commission_earnings DESC
-        LIMIT 50
-    """
-    
+    if _ref_lookup_exists:
+        pareto_query = f"""
+            SELECT
+                sub.CLIENTE,
+                sub.commission_earnings,
+                COALESCE(r.NOMBRE, CAST(sub.main_referenciador AS VARCHAR)) AS nombre_ref
+            FROM (
+                SELECT
+                    CLIENTE,
+                    SUM(COMISION) as commission_earnings,
+                    mode(REFERENCIADOR) as main_referenciador
+                FROM operaciones_bmc
+                {filter_query}
+                GROUP BY CLIENTE
+                ORDER BY commission_earnings DESC
+                LIMIT 50
+            ) sub
+            LEFT JOIN referenciadores r ON sub.main_referenciador = r.CODIGO
+        """
+    else:
+        pareto_query = f"""
+            SELECT
+                CLIENTE,
+                SUM(COMISION) as commission_earnings,
+                NULL as nombre_ref
+            FROM operaciones_bmc
+            {filter_query}
+            GROUP BY CLIENTE
+            ORDER BY commission_earnings DESC
+            LIMIT 50
+        """
+
     with st.expander("🔍 Ver Consulta SQL", expanded=False):
         st.code(pareto_query, language="sql")
-    
+
     pareto_df = safe_query(pareto_query, "análisis de Pareto")
-    
+
     if not pareto_df.empty:
         pareto_df['cumulative_commission'] = pareto_df['commission_earnings'].cumsum()
         pareto_df['cumulative_pct'] = (pareto_df['cumulative_commission'] / pareto_df['commission_earnings'].sum()) * 100
-        
+
+        _pareto_has_ref = 'nombre_ref' in pareto_df.columns and pareto_df['nombre_ref'].notna().any()
+
         fig_pareto = go.Figure()
         fig_pareto.add_trace(go.Bar(
             x=pareto_df['CLIENTE'],
             y=pareto_df['commission_earnings'],
             name='Comisión',
             marker_color='lightblue',
-            hovertemplate='<b>%{x}</b><br>Comisión: $%{y:,.0f}<extra></extra>'
+            customdata=pareto_df[['nombre_ref']] if _pareto_has_ref else None,
+            hovertemplate=(
+                '<b>%{x}</b><br>Comisión: $%{y:,.0f}<br>Referenciador: %{customdata[0]}<extra></extra>'
+                if _pareto_has_ref else
+                '<b>%{x}</b><br>Comisión: $%{y:,.0f}<extra></extra>'
+            )
         ))
         fig_pareto.add_trace(go.Scatter(
             x=pareto_df['CLIENTE'],
@@ -3132,7 +3225,12 @@ with tabs[5]:
             mode='lines+markers',
             marker=dict(color='red', size=6),
             line=dict(color='red', width=2),
-            hovertemplate='<b>%{x}</b><br>Acumulado: %{y:.1f}%<extra></extra>'
+            customdata=pareto_df[['nombre_ref']] if _pareto_has_ref else None,
+            hovertemplate=(
+                '<b>%{x}</b><br>Acumulado: %{y:.1f}%<br>Referenciador: %{customdata[0]}<extra></extra>'
+                if _pareto_has_ref else
+                '<b>%{x}</b><br>Acumulado: %{y:.1f}%<extra></extra>'
+            )
         ))
         fig_pareto.update_layout(
             title='Concentración de Comisiones (Gráfico de Pareto)',
