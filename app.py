@@ -3,6 +3,7 @@ import duckdb
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import plotly.io as pio
 import os
 import tempfile
 import uuid
@@ -11,6 +12,8 @@ import unicodedata
 import re
 from datetime import datetime, timedelta
 import hashlib
+
+pio.templates.default = "plotly_white"
 
 try:
     import networkx as nx
@@ -100,15 +103,141 @@ if not check_password():
 
 st.markdown("""
 <style>
-    .reportview-container {
-        background: #f0f2f6;
-    }
-    .metric-card {
-        background-color: white;
-        padding: 20px;
-        border-radius: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
+/* ── Base ───────────────────────────────────────────────── */
+html, body, [class*="css"] {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+}
+.main .block-container {
+    padding-top: 1.25rem;
+    padding-bottom: 2rem;
+    max-width: 1280px;
+}
+
+/* ── KPI metrics ─────────────────────────────────────────── */
+[data-testid="stMetric"] {
+    background: white;
+    border-radius: 14px;
+    padding: 1.1rem 1.3rem 1rem;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+    border-top: 4px solid #16A34A;
+}
+/* Per-card accent colours (cards 2-5 override the default green) */
+[data-testid="stHorizontalBlock"] > div:nth-child(2) [data-testid="stMetric"] { border-top-color: #2563EB; }
+[data-testid="stHorizontalBlock"] > div:nth-child(3) [data-testid="stMetric"] { border-top-color: #7C3AED; }
+[data-testid="stHorizontalBlock"] > div:nth-child(4) [data-testid="stMetric"] { border-top-color: #D97706; }
+[data-testid="stHorizontalBlock"] > div:nth-child(5) [data-testid="stMetric"] { border-top-color: #0891B2; }
+[data-testid="stMetric"] label {
+    font-size: 0.72rem !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.07em !important;
+    color: #6b7280 !important;
+    text-transform: uppercase !important;
+}
+[data-testid="stMetricValue"] > div {
+    font-size: 1.65rem !important;
+    font-weight: 800 !important;
+    color: #111827 !important;
+}
+
+/* ── Tabs ────────────────────────────────────────────────── */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 4px;
+    background: #f1f5f9;
+    padding: 5px 6px;
+    border-radius: 12px;
+    border-bottom: none !important;
+}
+.stTabs [data-baseweb="tab"] {
+    border-radius: 9px !important;
+    padding: 7px 18px !important;
+    font-size: 0.82rem !important;
+    font-weight: 500 !important;
+    color: #64748b !important;
+    background: transparent !important;
+    border: none !important;
+    outline: none !important;
+}
+.stTabs [aria-selected="true"] {
+    background: white !important;
+    color: #0f172a !important;
+    font-weight: 700 !important;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.10) !important;
+}
+
+/* ── Charts ──────────────────────────────────────────────── */
+[data-testid="stPlotlyChart"] {
+    background: white;
+    border-radius: 14px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+    padding: 2rem 0.5rem 0.25rem;
+    margin-bottom: 0.75rem;
+    overflow: visible !important;
+}
+/* Keep the inner iframe/div from clipping the modebar */
+[data-testid="stPlotlyChart"] > div {
+    overflow: visible !important;
+}
+
+/* ── DataFrames ──────────────────────────────────────────── */
+[data-testid="stDataFrame"] {
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.06);
+}
+
+/* ── Alerts / info boxes ─────────────────────────────────── */
+[data-testid="stAlert"] {
+    border-radius: 10px !important;
+    font-size: 0.88rem !important;
+}
+
+/* ── Expanders ───────────────────────────────────────────── */
+.streamlit-expanderHeader {
+    font-size: 0.86rem !important;
+    color: #64748b !important;
+    font-weight: 500 !important;
+}
+[data-testid="stExpander"] {
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 10px !important;
+}
+
+/* ── Subheaders / section titles ─────────────────────────── */
+h2 {
+    font-size: 1.25rem !important;
+    font-weight: 700 !important;
+    color: #0f172a !important;
+}
+h3 {
+    font-size: 1.0rem !important;
+    font-weight: 650 !important;
+    color: #1e293b !important;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────── */
+[data-testid="stSidebar"] > div:first-child {
+    background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
+}
+[data-testid="stSidebar"] label,
+[data-testid="stSidebar"] .stMarkdown p,
+[data-testid="stSidebar"] .stMarkdown li,
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3 {
+    color: #e2e8f0 !important;
+}
+[data-testid="stSidebar"] .stButton > button {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: #e2e8f0 !important;
+    border-radius: 8px;
+}
+[data-testid="stSidebar"] .stButton > button:hover {
+    background: rgba(255,255,255,0.16);
+}
+
+/* ── Section dividers ────────────────────────────────────── */
+hr { border: none; border-top: 1px solid #e2e8f0; margin: 1.25rem 0; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -820,75 +949,59 @@ with st.expander("📋 **Guía del Tablero**", expanded=False):
     """)
 
 st.markdown("---")
-st.subheader("🚀 Resumen del Negocio - Sus Comisiones de un Vistazo")
-
-col1, col2, col3, col4, col5 = st.columns(5)
 
 overview_query = f"""
-    SELECT 
+    SELECT
         COUNT(DISTINCT CLIENTE) as unique_clients,
         COUNT(DISTINCT "NOMBRE PRODUCTO") as unique_products,
         SUM("VALOR NEGOCIO") as total_volume,
         SUM(COMISION) as total_commission,
         COUNT(*) as total_ops,
         AVG(COMISION / NULLIF("VALOR NEGOCIO", 0)) * 100 as avg_commission_rate
-    FROM operaciones_bmc 
+    FROM operaciones_bmc
     {filter_query}
 """
-
-with st.expander("🔍 Ver Consulta SQL del Resumen", expanded=False):
-    st.code(overview_query, language="sql")
 
 overview_data = safe_query(overview_query, "métricas de resumen")
 
 if not overview_data.empty:
-    with col1:
-        st.metric(
-            "💰 Sus Comisiones Ganadas", 
-            f"${overview_data['total_commission'][0]:,.0f}",
-            help="Total de comisiones ganadas - ¡estas son las ganancias de SU empresa!"
-        )
-    with col2:
-        st.metric(
-            "📊 Volumen de Clientes", 
-            f"${overview_data['total_volume'][0]:,.0f}",
-            help="Valor total de transacciones de clientes (no sus comisiones)"
-        )
-    with col3:
-        st.metric(
-            "📈 Tasa Promedio de Comisión", 
-            f"{overview_data['avg_commission_rate'][0]:.2f}%",
-            help="Porcentaje promedio que gana en cada transacción"
-        )
-    with col4:
-        st.metric(
-            "👥 Clientes Activos", 
-            f"{int(overview_data['unique_clients'][0]):,}",
-            help="Número de clientes generando comisiones para usted"
-        )
-    with col5:
-        st.metric(
-            "✅ Transacciones", 
-            f"{int(overview_data['total_ops'][0]):,}",
-            help="Total de operaciones procesadas"
-        )
+    _tc  = overview_data['total_commission'][0]
+    _tv  = overview_data['total_volume'][0]
+    _cr  = overview_data['avg_commission_rate'][0]
+    _cl  = int(overview_data['unique_clients'][0])
+    _ops = int(overview_data['total_ops'][0])
 
-# Definir Pestañas
+    k1, k2, k3, k4, k5 = st.columns(5)
+    with k1:
+        st.metric("💰 Comisiones Ganadas", f"${_tc:,.0f}",
+                  help="Sus ingresos netos por comisiones")
+    with k2:
+        st.metric("📦 Volumen Negociado", f"${_tv:,.0f}",
+                  help="Valor total de las operaciones procesadas")
+    with k3:
+        st.metric("📈 Tasa de Comisión", f"{_cr:.2f}%",
+                  help="Porcentaje promedio ganado por operación")
+    with k4:
+        st.metric("👥 Clientes Activos", f"{_cl:,}",
+                  help="Clientes con operaciones en el período seleccionado")
+    with k5:
+        st.metric("✅ Operaciones", f"{_ops:,}",
+                  help="Total de transacciones procesadas")
+
 tabs = st.tabs([
-    "📊 Tablero de Desempeño", 
-    "💡 Perspectivas Estratégicas",
-    "🔗 Red Compradores-Vendedores",
-    "👥 Perspectivas del Cliente",
-    "🔍 Análisis Operativo",
-    "🛡️ Riesgo y Auditoría"
+    "📊 Desempeño",
+    "💡 Estrategia",
+    "🔗 Red Comercial",
+    "👥 Clientes",
+    "🔍 Operaciones",
+    "🛡️ Riesgo",
 ])
 
 # --- PESTAÑA 1: TABLERO DE DESEMPEÑO ---
 with tabs[0]:
-    st.markdown("### 💰 Desempeño de Comisiones - Sus Ganancias")
-    st.info("💡 **Recuerde:** Las comisiones son SUS ganancias - ¡esto es lo que genera su empresa!")
     
-    col_left, col_right = st.columns(2)
+    col_left = st.container()
+    col_right = st.container()
     
     with col_left:
         st.subheader("📊 Tendencia Mensual de Comisiones")
@@ -953,54 +1066,37 @@ with tabs[0]:
                 x=monthly_df['MES'],
                 y=monthly_df['commission_earnings'],
                 mode='lines+markers',
-                name='Sus Comisiones Ganadas',
-                line=dict(color='#27AE60', width=4),
-                marker=dict(size=10, color='#27AE60'),
-                hovertemplate='<b>%{x}</b><br>💰 Sus Ganancias: $%{y:,.0f}<extra></extra>'
+                name='Comisiones',
+                line=dict(color='#16A34A', width=3),
+                marker=dict(size=8, color='#16A34A', line=dict(color='white', width=2)),
+                fill='tozeroy',
+                fillcolor='rgba(22,163,74,0.08)',
+                hovertemplate='<b>%{x}</b><br>Comisiones: $%{y:,.0f}<extra></extra>'
             ))
             fig_monthly.update_layout(
-                title="Sus Comisiones Ganadas por Mes",
-                xaxis_title="Mes",
-                yaxis_title="Comisiones Ganadas ($) - SUS INGRESOS",
+                title=dict(text="Comisiones Ganadas por Mes", font=dict(size=15, color='#0f172a')),
+                xaxis=dict(title="", showgrid=False, tickfont=dict(size=12)),
+                yaxis=dict(title="Comisiones ($)", tickformat='$,.0f', gridcolor='#f1f5f9'),
                 hovermode='x unified',
-                plot_bgcolor='rgba(39,174,96,0.1)'
+                margin=dict(l=60, r=20, t=50, b=40),
+                height=380,
+                showlegend=False,
             )
             st.plotly_chart(fig_monthly, width="stretch")
-            st.caption("💰 Esto muestra las ganancias reales de SU empresa por comisiones")
         else:
             st.info("No hay datos disponibles para la tendencia mensual")
     
     with col_right:
-        st.subheader("🏆 Top 10 Clientes por Comisiones Generadas")
-        
-        with st.expander("ℹ️ ¿Qué muestra esto?", expanded=False):
-            st.markdown("""
-            **Pregunta de Negocio:** ¿Qué clientes están generando más comisión para USTED?
-            
-            **Qué estamos midiendo:**
-            - **Comisión total generada por cada cliente** = Cuánto le paga cada cliente
-            - Número de transacciones por cliente
-            - Volumen total de transacciones
-            
-            **Por qué importa:**
-            - ¡Estas son SUS vacas lecheras - los clientes que pagan sus cuentas!
-            - Merecen tratamiento VIP para mantenerlos contentos
-            - Perder uno de estos clientes afectaría significativamente sus comisiones
-            
-            **Cómo usarlo:** 
-            - Llame a estos clientes regularmente para mantener las relaciones
-            - Déles servicio prioritario y atención especial
-            - Ofrézcales incentivos para hacer MÁS negocio con usted
-            - Si alguno aparece en la lista de "Riesgo de Fuga" - ¡se necesita acción URGENTE!
-            
-            **Conclusión:** Estos clientes = Sus mayores cheques de pago. ¡Manténgalos contentos!
-            """)
-        
+        st.subheader("🏆 Mejores Clientes por Comisión")
+        st.caption("Los 10 clientes que más ingresos generan. El color identifica su referenciador.")
+
         if _ref_lookup_exists:
             clients_query = f"""
                 SELECT
                     sub.CLIENTE,
                     sub.commission_earnings,
+                    sub.ref_earnings,
+                    sub.commission_earnings - sub.ref_earnings AS company_commission,
                     sub.transactions,
                     sub.transaction_volume,
                     sub.avg_commission_rate,
@@ -1009,11 +1105,13 @@ with tabs[0]:
                 FROM (
                     SELECT
                         CLIENTE,
-                        SUM(COMISION) as commission_earnings,
-                        COUNT(*) as transactions,
-                        SUM("VALOR NEGOCIO") as transaction_volume,
-                        AVG(COMISION / NULLIF("VALOR NEGOCIO", 0)) * 100 as avg_commission_rate,
-                        mode(REFERENCIADOR) as main_referenciador
+                        SUM(COMISION) AS commission_earnings,
+                        SUM(COMISION * ("% REF VENTA" / 100.0))
+                            + SUM(COMISION * ("% REF COMPRA" / 100.0)) AS ref_earnings,
+                        COUNT(*) AS transactions,
+                        SUM("VALOR NEGOCIO") AS transaction_volume,
+                        AVG(COMISION / NULLIF("VALOR NEGOCIO", 0)) * 100 AS avg_commission_rate,
+                        mode(REFERENCIADOR) AS main_referenciador
                     FROM operaciones_bmc
                     {filter_query}
                     GROUP BY CLIENTE
@@ -1026,12 +1124,17 @@ with tabs[0]:
             clients_query = f"""
                 SELECT
                     CLIENTE,
-                    SUM(COMISION) as commission_earnings,
-                    COUNT(*) as transactions,
-                    SUM("VALOR NEGOCIO") as transaction_volume,
-                    AVG(COMISION / NULLIF("VALOR NEGOCIO", 0)) * 100 as avg_commission_rate,
-                    NULL as main_referenciador,
-                    NULL as nombre_ref
+                    SUM(COMISION) AS commission_earnings,
+                    SUM(COMISION * ("% REF VENTA" / 100.0))
+                        + SUM(COMISION * ("% REF COMPRA" / 100.0)) AS ref_earnings,
+                    SUM(COMISION)
+                        - SUM(COMISION * ("% REF VENTA" / 100.0))
+                        - SUM(COMISION * ("% REF COMPRA" / 100.0)) AS company_commission,
+                    COUNT(*) AS transactions,
+                    SUM("VALOR NEGOCIO") AS transaction_volume,
+                    AVG(COMISION / NULLIF("VALOR NEGOCIO", 0)) * 100 AS avg_commission_rate,
+                    NULL AS main_referenciador,
+                    NULL AS nombre_ref
                 FROM operaciones_bmc
                 {filter_query}
                 GROUP BY CLIENTE
@@ -1046,41 +1149,181 @@ with tabs[0]:
 
         if not clients_df.empty:
             has_ref = _ref_lookup_exists and clients_df['nombre_ref'].notna().any()
+
+            # ── Chart ──────────────────────────────────────────────────────────
+            plot_df = clients_df.sort_values('commission_earnings', ascending=True).copy()
+
             if has_ref:
                 fig_clients = px.bar(
-                    clients_df,
+                    plot_df,
                     x='commission_earnings',
                     y='CLIENTE',
                     orientation='h',
                     color='nombre_ref',
-                    title="Mayores Generadores de Comisión - Sus Mejores Clientes",
+                    text='commission_earnings',
                     labels={
-                        'commission_earnings': 'Comisiones Ganadas ($)',
-                        'CLIENTE': 'Cliente',
-                        'nombre_ref': 'Referenciador'
+                        'commission_earnings': 'Comisión ($)',
+                        'CLIENTE': '',
+                        'nombre_ref': 'Referenciador',
                     },
-                )
-                fig_clients.update_traces(
-                    hovertemplate='<b>%{y}</b><br>💰 Le Paga: $%{x:,.0f}<br>Referenciador: %{customdata[2]}<br>Transacciones: %{customdata[0]}<br>Tasa Prom: %{customdata[1]:.2f}%<extra></extra>',
-                    customdata=clients_df[['transactions', 'avg_commission_rate', 'nombre_ref']]
+                    color_discrete_sequence=px.colors.qualitative.Safe,
                 )
             else:
                 fig_clients = px.bar(
-                    clients_df,
+                    plot_df,
                     x='commission_earnings',
                     y='CLIENTE',
                     orientation='h',
-                    title="Mayores Generadores de Comisión - Sus Mejores Clientes",
-                    labels={'commission_earnings': 'Comisiones Ganadas ($) - SUS INGRESOS', 'CLIENTE': 'Cliente'},
+                    text='commission_earnings',
                     color='commission_earnings',
-                    color_continuous_scale='Greens'
+                    color_continuous_scale='Greens',
+                    labels={'commission_earnings': 'Comisión ($)', 'CLIENTE': ''},
                 )
-                fig_clients.update_traces(
-                    hovertemplate='<b>%{y}</b><br>💰 Le Paga: $%{x:,.0f}<br>Transacciones: %{customdata[0]}<br>Tasa Prom: %{customdata[1]:.2f}%<extra></extra>',
-                    customdata=clients_df[['transactions', 'avg_commission_rate']]
-                )
+                fig_clients.update_coloraxes(showscale=False)
+
+            fig_clients.update_traces(
+                texttemplate='$%{text:,.0f}',
+                textposition='outside',
+                hovertemplate=(
+                    '<b>%{y}</b><br>'
+                    'Comisión: $%{x:,.0f}<br>'
+                    + ('Referenciador: %{customdata[2]}<br>' if has_ref else '')
+                    + 'Operaciones: %{customdata[0]:,.0f}<br>'
+                    'Tasa prom: %{customdata[1]:.2f}%<extra></extra>'
+                ),
+                customdata=plot_df[['transactions', 'avg_commission_rate', 'nombre_ref']]
+                           if has_ref else
+                           plot_df[['transactions', 'avg_commission_rate']],
+            )
+            fig_clients.update_layout(
+                title=None,
+                xaxis=dict(title='Comisión generada ($)', tickformat='$,.0f',
+                           showgrid=True, gridcolor='#f1f5f9'),
+                yaxis=dict(title='', tickfont=dict(size=12)),
+                legend=dict(title='Referenciador', orientation='h',
+                            yanchor='bottom', y=1.02, xanchor='left', x=0),
+                margin=dict(l=10, r=120, t=40, b=40),
+                height=420,
+            )
             st.plotly_chart(fig_clients, width="stretch")
-            st.caption("💰 Estos clientes generan las mayores comisiones para SU empresa")
+
+            # ── Ranked summary table ───────────────────────────────────────────
+            table_df = clients_df.copy().reset_index(drop=True)
+            table_df.insert(0, '#', range(1, len(table_df) + 1))
+            for col in ('commission_earnings', 'ref_earnings', 'company_commission', 'transaction_volume'):
+                if col in table_df.columns:
+                    table_df[col] = table_df[col].apply(lambda v: f"${v:,.0f}" if pd.notna(v) else "$0")
+            table_df['transactions']        = table_df['transactions'].apply(lambda v: f"{v:,.0f}")
+            table_df['avg_commission_rate'] = table_df['avg_commission_rate'].apply(lambda v: f"{v:.2f}%")
+
+            col_map = {
+                '#': '#',
+                'CLIENTE': 'Cliente',
+                'nombre_ref': 'Referenciador',
+                'commission_earnings': 'Comisión Total',
+                'ref_earnings': 'Comisión Referenciador',
+                'company_commission': 'Comisión Empresa',
+                'transactions': 'Operaciones',
+                'avg_commission_rate': 'Tasa Prom',
+            }
+            show_cols = ['#', 'CLIENTE', 'nombre_ref', 'commission_earnings',
+                         'ref_earnings', 'company_commission',
+                         'transactions', 'avg_commission_rate'] if has_ref else \
+                        ['#', 'CLIENTE', 'commission_earnings',
+                         'ref_earnings', 'company_commission',
+                         'transactions', 'avg_commission_rate']
+            table_df = table_df[show_cols].rename(columns=col_map)
+
+            _cc = st.column_config
+            col_cfg = {
+                '#': _cc.NumberColumn(
+                    '#',
+                    help='Posición en el ranking. El #1 es el cliente que más comisión genera para su empresa.',
+                    format='%d',
+                ),
+                'Cliente': _cc.TextColumn(
+                    'Cliente',
+                    help='Nombre del cliente registrado en las operaciones.',
+                ),
+                'Referenciador': _cc.TextColumn(
+                    'Referenciador',
+                    help='Referenciador que más operaciones aportó para este cliente '
+                         '(calculado como la moda de REFERENCIADOR en sus operaciones).',
+                ),
+                'Comisión Total': _cc.TextColumn(
+                    'Comisión Total',
+                    help='Suma de todas las comisiones generadas por este cliente.\n'
+                         'Fórmula: SUM(COMISION)',
+                ),
+                'Comisión Referenciador': _cc.TextColumn(
+                    'Comisión Referenciador',
+                    help='Monto que se paga al referenciador por las operaciones de este cliente.\n'
+                         'Fórmula: SUM(COMISION × "% REF VENTA" / 100) + SUM(COMISION × "% REF COMPRA" / 100)',
+                ),
+                'Comisión Empresa': _cc.TextColumn(
+                    'Comisión Empresa',
+                    help='Lo que su empresa retiene después de pagar al referenciador.\n'
+                         'Fórmula: Comisión Total − Comisión Referenciador',
+                ),
+                'Operaciones': _cc.TextColumn(
+                    'Operaciones',
+                    help='Número total de operaciones registradas para este cliente en el período seleccionado.',
+                ),
+                'Tasa Prom': _cc.TextColumn(
+                    'Tasa Prom',
+                    help='Tasa promedio de comisión cobrada sobre el valor de negocio.\n'
+                         'Fórmula: AVG(COMISION / VALOR NEGOCIO) × 100',
+                ),
+            }
+            st.dataframe(
+                table_df,
+                use_container_width=True,
+                hide_index=True,
+                column_config={k: v for k, v in col_cfg.items() if k in table_df.columns},
+            )
+
+            # ── Referenciador breakdown (only when loaded) ─────────────────────
+            if has_ref:
+                ref_summary = (
+                    clients_df.groupby('nombre_ref')
+                    .agg(
+                        clientes=('CLIENTE', 'count'),
+                        comision_total=('commission_earnings', 'sum'),
+                        comision_ref=('ref_earnings', 'sum'),
+                        comision_empresa=('company_commission', 'sum'),
+                    )
+                    .sort_values('comision_total', ascending=False)
+                    .reset_index()
+                )
+                st.markdown("**Aporte por referenciador — de estos 10 clientes**")
+                st.caption(
+                    "Cada tarjeta muestra cuánto retiene su empresa gracias a los clientes "
+                    "que trajo ese referenciador. Pase el cursor sobre el ícono **?** para ver el detalle."
+                )
+                rcols = st.columns(min(len(ref_summary), 4))
+                for i, row in ref_summary.iterrows():
+                    with rcols[i % len(rcols)]:
+                        st.metric(
+                            label=row['nombre_ref'],
+                            value=f"${row['comision_empresa']:,.0f}",
+                            delta=f"Ref: ${row['comision_ref']:,.0f}  ·  {int(row['clientes'])} cliente{'s' if row['clientes'] > 1 else ''}",
+                            help=(
+                                f"**{row['nombre_ref']}**\n\n"
+                                f"**Comisión Empresa** (valor principal)\n"
+                                f"Lo que su empresa retiene después de pagar al referenciador.\n"
+                                f"Fórmula: Comisión Total − Comisión Referenciador\n"
+                                f"= ${row['comision_total']:,.0f} − ${row['comision_ref']:,.0f} "
+                                f"= ${row['comision_empresa']:,.0f}\n\n"
+                                f"**Comisión Referenciador** (flecha)\n"
+                                f"Monto pagado al referenciador por sus clientes.\n"
+                                f"Fórmula: SUM(COMISION × % REF VENTA/100) + SUM(COMISION × % REF COMPRA/100)\n"
+                                f"= ${row['comision_ref']:,.0f}\n\n"
+                                f"**Comisión Total generada**\n"
+                                f"Suma bruta de comisiones de sus {int(row['clientes'])} "
+                                f"cliente{'s' if row['clientes'] > 1 else ''} en el top 10.\n"
+                                f"= ${row['comision_total']:,.0f}"
+                            ),
+                        )
         else:
             st.info("No hay datos de clientes disponibles")
     
@@ -1112,30 +1355,26 @@ with tabs[0]:
         **Perspectiva clave:** Sus mejores referenciadores = Sus generadores de dinero. ¡Invierta en mantenerlos contentos y productivos!
         """)
     
-    col_ref1, col_ref2 = st.columns(2)
+    col_ref1 = st.container()
+    col_ref2 = st.container()
     
     with col_ref1:
         referenciador_where = filter_query + (" AND " if filter_query else "WHERE ") + "REFERENCIADOR IS NOT NULL AND REFERENCIADOR != 0"
 
-        # Use LEFT JOIN with referenciadores lookup table if it has been loaded
         if _ref_lookup_exists:
             referenciador_query = f"""
-                SELECT
-                    sub.REFERENCIADOR,
+                SELECT sub.REFERENCIADOR,
                     COALESCE(r.NOMBRE, CAST(sub.REFERENCIADOR AS VARCHAR)) AS NOMBRE_REF,
-                    sub.total_operations,
-                    sub.total_commission,
-                    sub.total_volume,
-                    sub.avg_commission_per_op,
-                    sub.referenciador_earnings
+                    sub.total_operations, sub.total_commission, sub.total_volume,
+                    sub.avg_commission_per_op, sub.referenciador_earnings
                 FROM (
-                    SELECT
-                        REFERENCIADOR,
+                    SELECT REFERENCIADOR,
                         COUNT(*) as total_operations,
                         SUM(COMISION) as total_commission,
                         SUM("VALOR NEGOCIO") as total_volume,
                         AVG(COMISION) as avg_commission_per_op,
-                        SUM(COMISION * ("% REF VENTA" / 100.0)) + SUM(COMISION * ("% REF COMPRA" / 100.0)) as referenciador_earnings
+                        SUM(COMISION * ("% REF VENTA" / 100.0))
+                            + SUM(COMISION * ("% REF COMPRA" / 100.0)) as referenciador_earnings
                     FROM operaciones_bmc
                     {referenciador_where}
                     GROUP BY REFERENCIADOR
@@ -1146,13 +1385,13 @@ with tabs[0]:
         else:
             referenciador_query = f"""
                 SELECT
-                    REFERENCIADOR,
                     CAST(REFERENCIADOR AS VARCHAR) AS NOMBRE_REF,
                     COUNT(*) as total_operations,
                     SUM(COMISION) as total_commission,
                     SUM("VALOR NEGOCIO") as total_volume,
                     AVG(COMISION) as avg_commission_per_op,
-                    SUM(COMISION * ("% REF VENTA" / 100.0)) + SUM(COMISION * ("% REF COMPRA" / 100.0)) as referenciador_earnings
+                    SUM(COMISION * ("% REF VENTA" / 100.0))
+                        + SUM(COMISION * ("% REF COMPRA" / 100.0)) as referenciador_earnings
                 FROM operaciones_bmc
                 {referenciador_where}
                 GROUP BY REFERENCIADOR
@@ -1166,7 +1405,6 @@ with tabs[0]:
 
         if not referenciador_df.empty:
             top_10_ref_df = referenciador_df.head(10).copy()
-            top_10_ref_df['REFERENCIADOR'] = top_10_ref_df['REFERENCIADOR'].astype(str)
 
             fig_ref = go.Figure()
             fig_ref.add_trace(go.Bar(
@@ -1182,17 +1420,18 @@ with tabs[0]:
                 texttemplate='$%{text:,.0f}',
                 textposition='outside',
                 hovertemplate='<b>%{x}</b><br>' +
-                             'Código: %{customdata[3]}<br>' +
                              'Comisión Total: $%{y:,.0f}<br>' +
+                             'Volumen Total: $%{customdata[4]:,.0f}<br>' +
                              'Operaciones: %{customdata[0]:,.0f}<br>' +
                              'Prom por Op: $%{customdata[1]:,.0f}<br>' +
-                             'Ganancias Est.: $%{customdata[2]:,.0f}<extra></extra>',
-                customdata=top_10_ref_df[['total_operations', 'avg_commission_per_op', 'referenciador_earnings', 'REFERENCIADOR']]
+                             'Ganancias Referenciador: $%{customdata[2]:,.0f}<br>' +
+                             'Código: %{customdata[3]}<extra></extra>',
+                customdata=top_10_ref_df[['total_operations', 'avg_commission_per_op', 'referenciador_earnings', 'REFERENCIADOR', 'total_volume']]
             ))
 
             fig_ref.update_layout(
                 title={
-                    'text': "Top 10 Impulsores de Comisión - Volumen Generado",
+                    'text': "Top 10 Referenciadores por Comisión Generada",
                     'font': {'size': 16, 'color': '#2c3e50'}
                 },
                 xaxis_title="Referenciador",
@@ -1217,31 +1456,67 @@ with tabs[0]:
 
             display_df = referenciador_df.copy()
             display_df['REFERENCIADOR'] = display_df['REFERENCIADOR'].astype(str)
-            display_df = display_df[['REFERENCIADOR', 'NOMBRE_REF', 'total_operations', 'total_commission', 'total_volume', 'referenciador_earnings']]
-            display_df = display_df.rename(columns={'NOMBRE_REF': 'NOMBRE'})
+            display_df = display_df[['REFERENCIADOR', 'NOMBRE_REF', 'total_operations',
+                                     'total_commission', 'total_volume', 'referenciador_earnings']]
+            display_df = display_df.rename(columns={'NOMBRE_REF': 'Nombre', 'REFERENCIADOR': 'Código'})
 
+            # Pre-format so column_config tooltips can be added
+            display_df['total_operations']      = display_df['total_operations'].apply(lambda v: f"{v:,.0f}")
+            display_df['total_commission']       = display_df['total_commission'].apply(lambda v: f"${v:,.0f}")
+            display_df['total_volume']           = display_df['total_volume'].apply(lambda v: f"${v:,.0f}")
+            display_df['referenciador_earnings'] = display_df['referenciador_earnings'].apply(lambda v: f"${v:,.0f}")
+
+            _cc = st.column_config
             st.dataframe(
-                display_df.style.format({
-                    'total_operations': '{:,.0f}',
-                    'total_commission': '${:,.0f}',
-                    'total_volume': '${:,.0f}',
-                    'referenciador_earnings': '${:,.0f}'
-                }),
-                width="stretch",
-                height=500
+                display_df,
+                use_container_width=True,
+                height=500,
+                hide_index=True,
+                column_config={
+                    'Código': _cc.TextColumn(
+                        'Código',
+                        help='Código interno que identifica al referenciador en el sistema.',
+                    ),
+                    'Nombre': _cc.TextColumn(
+                        'Referenciador',
+                        help='Nombre o razón social del referenciador.',
+                    ),
+                    'total_operations': _cc.TextColumn(
+                        'Operaciones',
+                        help='Número total de operaciones en las que participó este referenciador '
+                             'dentro del período filtrado.\n'
+                             'Fórmula: COUNT(*)',
+                    ),
+                    'total_commission': _cc.TextColumn(
+                        'Comisión Total',
+                        help='Suma de todas las comisiones generadas en las operaciones '
+                             'donde este referenciador participó.\n'
+                             'Fórmula: SUM(COMISION)',
+                    ),
+                    'total_volume': _cc.TextColumn(
+                        'Volumen Total',
+                        help='Valor total de negocio (monto operado) en las operaciones '
+                             'asociadas a este referenciador.\n'
+                             'Fórmula: SUM(VALOR NEGOCIO)',
+                    ),
+                    'referenciador_earnings': _cc.TextColumn(
+                        'Ganancia Referenciador',
+                        help='Estimación de lo que su empresa paga a este referenciador '
+                             'por concepto de comisión sobre ventas y compras.\n'
+                             'Fórmula: SUM(COMISION × "% REF VENTA" / 100) '
+                             '+ SUM(COMISION × "% REF COMPRA" / 100)',
+                    ),
+                },
             )
-            
+
             total_commission = referenciador_df['total_commission'].sum()
-            total_earnings = referenciador_df['referenciador_earnings'].sum()
-            
-            st.info(f"""
-            📊 **Resumen:**
-            - Total Referenciadores: {len(referenciador_df)}
-            - Total Comisión Generada: ${total_commission:,.0f}
-            - Total Ganancias Referenciadores: ${total_earnings:,.0f}
-            """)
-            
-            st.caption("💰 Desplace por la lista completa - ganancias estimadas de referenciadores basadas en porcentajes de comisión")
+            total_earnings   = referenciador_df['referenciador_earnings'].sum()
+
+            st.info(
+                f"📊 **Resumen:** {len(referenciador_df)} referenciadores · "
+                f"Comisión total: ${total_commission:,.0f} · "
+                f"Pagado a referenciadores: ${total_earnings:,.0f}"
+            )
         else:
             st.info("No hay datos de referenciadores disponibles")
     
@@ -1275,7 +1550,8 @@ with tabs[0]:
         - ¡Enfóquese en cajas grandes y verdes = sus productos más rentables!
         """)
     
-    col_prod1, col_prod2 = st.columns(2)
+    col_prod1 = st.container()
+    col_prod2 = st.container()
     
     with col_prod1:
         products_query = f"""
@@ -1337,7 +1613,8 @@ with tabs[1]:
     </div>
     """, unsafe_allow_html=True)
     
-    col_strat1, col_strat2 = st.columns(2)
+    col_strat1 = st.container()
+    col_strat2 = st.container()
     
     with col_strat1:
         st.subheader("🚨 Análisis de Riesgo de Fuga - ¡Proteja Sus Comisiones!")
@@ -1553,7 +1830,8 @@ with tabs[1]:
     segment_df = safe_query(segment_query, "segmentación de clientes")
     
     if not segment_df.empty:
-        col_seg1, col_seg2 = st.columns(2)
+        col_seg1 = st.container()
+        col_seg2 = st.container()
         
         with col_seg1:
             fig_segment = px.pie(
@@ -1624,7 +1902,8 @@ with tabs[2]:
     st.markdown("---")
     st.subheader("🕸️ Perspectivas de la Red y Relaciones Clave")
     
-    col_net1, col_net2 = st.columns(2)
+    col_net1 = st.container()
+    col_net2 = st.container()
     
     with col_net1:
         st.markdown("#### 🔄 Análisis de Nodos Centrales - ¿Quién Conecta Más?")
@@ -1802,7 +2081,8 @@ with tabs[2]:
     principal_df = safe_query(principal_query, "análisis de principal")
     
     if not principal_df.empty:
-        col_prin1, col_prin2 = st.columns(2)
+        col_prin1 = st.container()
+        col_prin2 = st.container()
         
         with col_prin1:
             fig_principal = px.pie(
@@ -1960,7 +2240,8 @@ with tabs[2]:
         if not potential_sellers_df.empty:
             potential_sellers_df = potential_sellers_df[~potential_sellers_df['prospect_nit'].isin(client_nits)]
         
-        col_opp1, col_opp2 = st.columns(2)
+        col_opp1 = st.container()
+        col_opp2 = st.container()
         
         with col_opp1:
             st.markdown("### 🔵 Compradores Potenciales como Clientes")
@@ -2914,7 +3195,8 @@ with tabs[3]:
 with tabs[4]:
     st.header("🔍 Análisis Operativo Detallado")
     
-    col_op1, col_op2 = st.columns(2)
+    col_op1 = st.container()
+    col_op2 = st.container()
     
     with col_op1:
         st.subheader("📅 Patrones de Operaciones Diarias")
@@ -3075,7 +3357,8 @@ with tabs[4]:
         - Planifique campañas de marketing por región
         """)
     
-    col_geo1, col_geo2 = st.columns(2)
+    col_geo1 = st.container()
+    col_geo2 = st.container()
     
     with col_geo1:
         st.markdown("**Principales Ciudades - Compradores**")
@@ -3357,7 +3640,8 @@ with tabs[5]:
         - Configure flujos de aprobación diferentes según tamaños
         """)
     
-    col_size1, col_size2 = st.columns(2)
+    col_size1 = st.container()
+    col_size2 = st.container()
     
     with col_size1:
         size_query = f"""
