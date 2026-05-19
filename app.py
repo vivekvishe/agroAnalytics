@@ -214,26 +214,106 @@ h3 {
     color: #1e293b !important;
 }
 
-/* ── Sidebar ─────────────────────────────────────────────── */
+/* ── Sidebar background ──────────────────────────────────── */
 [data-testid="stSidebar"] > div:first-child {
     background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
 }
+
+/* ── All text in sidebar ─────────────────────────────────── */
+[data-testid="stSidebar"],
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] span,
+[data-testid="stSidebar"] div,
 [data-testid="stSidebar"] label,
-[data-testid="stSidebar"] .stMarkdown p,
-[data-testid="stSidebar"] .stMarkdown li,
+[data-testid="stSidebar"] small,
 [data-testid="stSidebar"] h1,
 [data-testid="stSidebar"] h2,
 [data-testid="stSidebar"] h3 {
     color: #e2e8f0 !important;
 }
+
+/* ── Buttons ─────────────────────────────────────────────── */
 [data-testid="stSidebar"] .stButton > button {
-    background: rgba(255,255,255,0.08);
-    border: 1px solid rgba(255,255,255,0.15);
-    color: #e2e8f0 !important;
+    background: rgba(255,255,255,0.10) !important;
+    border: 1px solid rgba(255,255,255,0.25) !important;
+    color: #f1f5f9 !important;
     border-radius: 8px;
+    font-weight: 600 !important;
 }
 [data-testid="stSidebar"] .stButton > button:hover {
-    background: rgba(255,255,255,0.16);
+    background: rgba(255,255,255,0.20) !important;
+    color: #ffffff !important;
+}
+
+/* ── Multiselect input box ───────────────────────────────── */
+[data-testid="stSidebar"] [data-baseweb="select"] > div {
+    background: rgba(255,255,255,0.08) !important;
+    border-color: rgba(255,255,255,0.20) !important;
+}
+[data-testid="stSidebar"] [data-baseweb="select"] span,
+[data-testid="stSidebar"] [data-baseweb="select"] div {
+    color: #e2e8f0 !important;
+}
+/* Selected pill tags */
+[data-testid="stSidebar"] [data-baseweb="tag"] {
+    background: rgba(99,179,237,0.25) !important;
+    border-color: rgba(99,179,237,0.4) !important;
+}
+[data-testid="stSidebar"] [data-baseweb="tag"] span {
+    color: #e2e8f0 !important;
+}
+/* Placeholder text */
+[data-testid="stSidebar"] input::placeholder {
+    color: #94a3b8 !important;
+}
+[data-testid="stSidebar"] input {
+    color: #e2e8f0 !important;
+    caret-color: #e2e8f0 !important;
+}
+
+/* ── Expander ────────────────────────────────────────────── */
+[data-testid="stSidebar"] [data-testid="stExpander"] {
+    border: 1px solid rgba(255,255,255,0.18) !important;
+    border-radius: 8px !important;
+    background: rgba(255,255,255,0.05) !important;
+}
+[data-testid="stSidebar"] .streamlit-expanderHeader,
+[data-testid="stSidebar"] .streamlit-expanderHeader p,
+[data-testid="stSidebar"] .streamlit-expanderHeader span {
+    color: #f1f5f9 !important;
+    font-weight: 600 !important;
+}
+
+/* ── Alerts inside sidebar ───────────────────────────────── */
+[data-testid="stSidebar"] [data-testid="stAlert"] {
+    background: rgba(255,255,255,0.08) !important;
+}
+
+/* ── File uploader ───────────────────────────────────────── */
+[data-testid="stSidebar"] [data-testid="stFileUploader"] label,
+[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] {
+    color: #e2e8f0 !important;
+    border-color: rgba(255,255,255,0.20) !important;
+}
+
+/* ── Dividers ────────────────────────────────────────────── */
+[data-testid="stSidebar"] hr {
+    border-color: rgba(255,255,255,0.15) !important;
+}
+
+/* ── Dropdown popup list (renders outside sidebar DOM) ───── */
+[data-baseweb="popover"] [role="option"],
+[data-baseweb="popover"] [role="option"] span {
+    color: #1e293b !important;
+    background: #ffffff !important;
+}
+[data-baseweb="popover"] [role="option"]:hover,
+[data-baseweb="popover"] [aria-selected="true"] {
+    background: #e2e8f0 !important;
+    color: #0f172a !important;
+}
+[data-baseweb="menu"] {
+    background: #ffffff !important;
 }
 
 /* ── Section dividers ────────────────────────────────────── */
@@ -992,10 +1072,11 @@ if not overview_data.empty:
         ("🏢 Comisión Empresa (Neta)", f"${_nc:,.0f}",  "Lo que retiene su empresa después de pagar referenciadores. Fórmula: Comisión Total − Comisión Referenciador"),
         ("📦 Volumen Negociado",       f"${_tv:,.0f}",  "Valor total de las operaciones procesadas. Fórmula: SUM(VALOR NEGOCIO)"),
         ("👥 Clientes Activos",        f"{_cl:,}",      "Clientes con al menos una operación en el período seleccionado. Fórmula: COUNT(DISTINCT CLIENTE)"),
-        ("📈 Tasa Comisión",           f"{_cr:.2f}%",   "Porcentaje de comisión sobre el volumen total negociado. Fórmula: SUM(COMISION) / SUM(VALOR NEGOCIO) × 100"),
+        ("🔢 Transacciones",           f"{_ops:,}",     "Número total de operaciones registradas en el período seleccionado. Fórmula: COUNT(*)"),
+        ("📈 Tasa Comisión",           f"{_cr:.5f}%",   "Porcentaje de comisión sobre el volumen total negociado. Fórmula: SUM(COMISION) / SUM(VALOR NEGOCIO) × 100"),
     ]
-    k1, k2, k3, k4, k5, k6 = st.columns(6)
-    for _col, (_lbl, _val, _tip) in zip([k1, k2, k3, k4, k5, k6], _cards):
+    k1, k2, k3, k4, k5, k6, k7 = st.columns(7)
+    for _col, (_lbl, _val, _tip) in zip([k1, k2, k3, k4, k5, k6, k7], _cards):
         _col.markdown(_kpi_card(_lbl, _val, _tip), unsafe_allow_html=True)
 
 tabs = st.tabs([
@@ -1005,6 +1086,7 @@ tabs = st.tabs([
     "👥 Clientes",
     "🔍 Operaciones",
     "🛡️ Riesgo",
+    "📋 Comercial",
 ])
 
 # --- PESTAÑA 1: TABLERO DE DESEMPEÑO ---
@@ -1484,12 +1566,15 @@ with tabs[0]:
             display_df = referenciador_df.copy()
             display_df['REFERENCIADOR'] = display_df['REFERENCIADOR'].astype(str)
             display_df = display_df[['REFERENCIADOR', 'NOMBRE_REF', 'total_operations',
-                                     'total_commission', 'total_volume', 'referenciador_earnings']]
+                                     'total_commission', 'avg_commission_per_op',
+                                     'total_volume', 'referenciador_earnings']]
             display_df = display_df.rename(columns={'NOMBRE_REF': 'Nombre', 'REFERENCIADOR': 'Código'})
 
             # Pre-format so column_config tooltips can be added
+            display_df['avg_commission_per_op']  = referenciador_df['total_commission'] / referenciador_df['total_operations'].replace(0, float('nan'))
             display_df['total_operations']      = display_df['total_operations'].apply(lambda v: f"{v:,.0f}")
             display_df['total_commission']       = display_df['total_commission'].apply(lambda v: f"${v:,.0f}")
+            display_df['avg_commission_per_op']  = display_df['avg_commission_per_op'].apply(lambda v: f"${v:,.0f}" if pd.notna(v) else "—")
             display_df['total_volume']           = display_df['total_volume'].apply(lambda v: f"${v:,.0f}")
             display_df['referenciador_earnings'] = display_df['referenciador_earnings'].apply(lambda v: f"${v:,.0f}")
 
@@ -1519,6 +1604,11 @@ with tabs[0]:
                         help='Suma de todas las comisiones generadas en las operaciones '
                              'donde este referenciador participó.\n'
                              'Fórmula: SUM(COMISION)',
+                    ),
+                    'avg_commission_per_op': _cc.TextColumn(
+                        '$ por Operación',
+                        help='Comisión total dividida entre el número de operaciones de este referenciador.\n'
+                             'Fórmula: SUM(COMISION) / COUNT(*)',
                     ),
                     'total_volume': _cc.TextColumn(
                         'Volumen Total',
@@ -1853,73 +1943,60 @@ with tabs[1]:
     
     with col_strat2:
         st.subheader("🎯 Oportunidades de Venta Cruzada")
-        st.markdown("**Productos frecuentemente comprados juntos**")
-        
-        with st.expander("ℹ️ ¿Qué muestra esto?", expanded=False):
-            st.markdown("""
-            **Pregunta de Negocio:** ¿Qué productos compran los clientes juntos frecuentemente?
-            
-            **Qué estamos midiendo:**
-            - Pares de productos que los mismos clientes compran
-            - Número de clientes compartidos entre pares de productos
-            - Porcentaje de penetración de mercado
-            
-            **Por qué importa:**
-            - Crear ofertas de productos agrupados
-            - Entrenar al equipo de ventas en combinaciones naturales
-            - Aumentar comisión por cliente sugiriendo productos complementarios
-            
-            **Cómo usarlo:**
-            - Cuando un cliente compre Producto A, sugiera Producto B
-            - Cree paquetes promocionales de productos frecuentemente emparejados
-            - Diseñe campañas de marketing destacando estas combinaciones
-            """)
-        
+        st.markdown("Clientes que compran un producto **también compran** estos otros. Úselo para ofrecer el segundo producto cuando registre el primero.")
+
         cross_sell_query = f"""
             WITH client_products AS (
-                SELECT DISTINCT 
+                SELECT DISTINCT
                     "NIT COMPRADOR" as client,
                     "NOMBRE PRODUCTO" as product
                 FROM operaciones_bmc
                 {filter_query}
             )
-            SELECT 
+            SELECT
                 p1.product as product_a,
                 p2.product as product_b,
                 COUNT(DISTINCT p1.client) as shared_clients,
-                ROUND(COUNT(DISTINCT p1.client) * 100.0 / 
+                ROUND(COUNT(DISTINCT p1.client) * 100.0 /
                     (SELECT COUNT(DISTINCT client) FROM client_products), 2) as market_penetration
             FROM client_products p1
-            JOIN client_products p2 
-                ON p1.client = p2.client 
+            JOIN client_products p2
+                ON p1.client = p2.client
                 AND p1.product < p2.product
             GROUP BY p1.product, p2.product
             HAVING COUNT(DISTINCT p1.client) >= 3
             ORDER BY shared_clients DESC
             LIMIT 10
         """
-        
+
         with st.expander("🔍 Ver Consulta SQL", expanded=False):
             st.code(cross_sell_query, language="sql")
-        
+
         cross_sell_df = safe_query(cross_sell_query, "análisis de venta cruzada")
-        
+
         if not cross_sell_df.empty:
             cross_sell_display = cross_sell_df.copy()
-            cross_sell_display['shared_clients'] = cross_sell_display['shared_clients'].apply(lambda x: f'{int(x):,}')
-            cross_sell_display['market_penetration'] = cross_sell_display['market_penetration'].apply(lambda x: f'{x:.2f}%')
+            cross_sell_display['accion'] = cross_sell_display.apply(
+                lambda r: f"Si compra {r['product_a']} → ofrezca {r['product_b']}", axis=1
+            )
+            cross_sell_display['clientes_texto'] = cross_sell_display['shared_clients'].apply(
+                lambda x: f"{int(x)} cliente{'s' if x != 1 else ''} compran ambos"
+            )
+            cross_sell_display['market_penetration'] = cross_sell_display['market_penetration'].apply(
+                lambda x: f"{x:.1f}% de sus clientes"
+            )
+
             st.dataframe(
-                cross_sell_display,
-                width="stretch",
+                cross_sell_display[['accion', 'clientes_texto', 'market_penetration']],
+                use_container_width=True,
                 hide_index=True,
                 column_config={
-                    'product_a': st.column_config.TextColumn('Producto A', help='Primer producto del par de venta cruzada. Los pares están ordenados alfabéticamente para evitar duplicados.'),
-                    'product_b': st.column_config.TextColumn('Producto B', help='Segundo producto del par. Clientes que operan este producto también operan Producto A.'),
-                    'shared_clients': st.column_config.TextColumn('Clientes Compartidos', help='Número de clientes distintos que han operado ambos productos en el período filtrado.\nFórmula: COUNT(DISTINCT cliente) — solo pares con ≥ 3 clientes compartidos'),
-                    'market_penetration': st.column_config.TextColumn('Penetración de Mercado', help='Porcentaje de sus clientes totales que han operado ambos productos. Indica qué tan común es este par.\nFórmula: (Clientes Compartidos / Total Clientes) × 100'),
+                    'accion':              st.column_config.TextColumn('Qué hacer', help='Acción concreta: cuando un cliente opere el primer producto, ofrézcale también el segundo.'),
+                    'clientes_texto':      st.column_config.TextColumn('Cuántos ya lo hacen', help='Número de clientes que actualmente operan ambos productos. Cuanto mayor, más sólida es la oportunidad.'),
+                    'market_penetration':  st.column_config.TextColumn('Del total de clientes', help='Qué porcentaje de todos sus clientes ya compra esta combinación.\nFórmula: (Clientes que compran ambos / Total clientes) × 100'),
                 }
             )
-            st.info("💡 Cree ofertas agrupadas para los mejores pares de productos")
+            st.info("💡 Empiece por la primera fila — es la combinación más frecuente entre sus clientes.")
         else:
             st.info("No hay suficientes datos para el análisis de venta cruzada")
     
@@ -3463,6 +3540,7 @@ with tabs[3]:
         client_nit = _sql_str(str(_nit_rows.values[0]))
         
         st.markdown(f"## 📊 Perspectivas para: {selected_client}")
+        _client_where = filter_query + (" AND " if filter_query else "WHERE ") + f'"CC PPAL" = \'{client_nit}\''
 
         if _ref_lookup_exists:
             _client_ref_query = f"""
@@ -3495,7 +3573,7 @@ with tabs[3]:
                 COUNT(DISTINCT CASE WHEN PRINCIPAL = 'C' THEN "NIT VENDEDOR" END) as unique_sellers,
                 AVG(COMISION / NULLIF("VALOR NEGOCIO", 0)) * 100 as avg_commission_rate
             FROM operaciones_bmc
-            WHERE "CC PPAL" = '{client_nit}'
+            {_client_where}
         """
 
         with st.expander("🔍 Ver Consulta SQL de Estadísticas del Cliente", expanded=False):
@@ -3617,7 +3695,7 @@ with tabs[3]:
                         SUM("VALOR NEGOCIO") as volume,
                         SUM(COMISION) as commission_paid
                     FROM operaciones_bmc
-                    WHERE "CC PPAL" = '{client_nit}'
+                    {_client_where}
                     GROUP BY MES
                     ORDER BY 
                         CASE 
@@ -3684,7 +3762,7 @@ with tabs[3]:
                             SUM("VALOR NEGOCIO") as total_volume,
                             MAX("FECHA REGISTRO") as last_transaction
                         FROM operaciones_bmc
-                        WHERE "CC PPAL" = '{client_nit}' AND PRINCIPAL = 'V'
+                        {_client_where} AND PRINCIPAL = 'V'
                         GROUP BY "NOMBRE COMPRADOR"
                         ORDER BY total_volume DESC
                         LIMIT 10
@@ -3716,7 +3794,7 @@ with tabs[3]:
                             SUM("VALOR NEGOCIO") as total_volume,
                             MAX("FECHA REGISTRO") as last_transaction
                         FROM operaciones_bmc
-                        WHERE "CC PPAL" = '{client_nit}' AND PRINCIPAL = 'C'
+                        {_client_where} AND PRINCIPAL = 'C'
                         GROUP BY "NOMBRE VENDEDOR"
                         ORDER BY total_volume DESC
                         LIMIT 10
@@ -3765,7 +3843,7 @@ with tabs[3]:
                         COUNT(*) as transactions,
                         AVG(COMISION / NULLIF("VALOR NEGOCIO", 0)) * 100 as effective_rate
                     FROM operaciones_bmc
-                    WHERE "CC PPAL" = '{client_nit}'
+                    {_client_where}
                     GROUP BY YEAR
                     ORDER BY YEAR DESC
                 """
@@ -4444,6 +4522,228 @@ with tabs[5]:
                 }
             )
             st.caption("💡 Las transacciones grandes pueden requerir manejo especial")
+
+# --- PESTAÑA 7: REPORTE COMERCIAL ---
+with tabs[6]:
+    st.header("📋 Reporte Comercial por Referenciador")
+    st.markdown("Seguimiento mes a mes de los clientes de cada referenciador — identifique quién no ha registrado y evalúe el desempeño individual.")
+
+    if not _ref_lookup_exists:
+        st.warning("⚠️ Cargue el archivo de referenciadores desde la barra lateral para activar este reporte.")
+    else:
+        # ── Referenciador selector ────────────────────────────────────────────
+        ref_list_query = f"""
+            SELECT DISTINCT sub.ref_code,
+                   COALESCE(r.NOMBRE, CAST(sub.ref_code AS VARCHAR)) AS ref_name
+            FROM (
+                SELECT REFERENCIADOR AS ref_code
+                FROM operaciones_bmc
+                {filter_query}
+                WHERE REFERENCIADOR IS NOT NULL AND REFERENCIADOR != 0
+                GROUP BY REFERENCIADOR
+            ) sub
+            LEFT JOIN referenciadores r ON sub.ref_code = r.CODIGO
+            ORDER BY ref_name
+        """
+        ref_list_df = safe_query(ref_list_query, "lista referenciadores comercial")
+
+        if ref_list_df.empty:
+            st.info("No hay referenciadores en los datos con los filtros actuales.")
+        else:
+            ref_options = {row['ref_name']: row['ref_code'] for _, row in ref_list_df.iterrows()}
+            selected_ref_name = st.selectbox(
+                "Seleccionar Referenciador / Comercial",
+                options=list(ref_options.keys()),
+                key="comercial_ref_selector",
+            )
+            selected_ref_code = ref_options[selected_ref_name]
+
+            st.markdown("---")
+
+            # ── KPI cards for selected referenciador ─────────────────────────
+            ref_kpi_query = f"""
+                SELECT
+                    COUNT(DISTINCT CLIENTE)  AS total_clients,
+                    COUNT(*)                 AS total_ops,
+                    SUM(COMISION)            AS total_commission,
+                    SUM(COMISION * ("% REF VENTA" / 100.0))
+                        + SUM(COMISION * ("% REF COMPRA" / 100.0)) AS ref_commission,
+                    MAX("FECHA REGISTRO")    AS last_op_date
+                FROM operaciones_bmc
+                {filter_query}
+                {'AND' if filter_query else 'WHERE'} REFERENCIADOR = {int(selected_ref_code)}
+            """
+            ref_kpi_df = safe_query(ref_kpi_query, "kpi referenciador comercial")
+
+            if not ref_kpi_df.empty:
+                rk = ref_kpi_df.iloc[0]
+                _rk_tc  = rk['total_commission']
+                _rk_rc  = rk['ref_commission']
+                _rk_nc  = _rk_tc - _rk_rc
+                _rk_cl  = int(rk['total_clients'])
+                _rk_ops = int(rk['total_ops'])
+                _rk_last = str(rk['last_op_date'])[:10] if rk['last_op_date'] else '—'
+
+                ck1, ck2, ck3, ck4, ck5, ck6 = st.columns(6)
+                ck1.markdown(_kpi_card("👥 Clientes",           f"{_rk_cl:,}",       "Clientes distintos con al menos una operación en el período."), unsafe_allow_html=True)
+                ck2.markdown(_kpi_card("🔢 Operaciones",        f"{_rk_ops:,}",      "Total de operaciones registradas por este referenciador."), unsafe_allow_html=True)
+                ck3.markdown(_kpi_card("💰 Comisión Total",     f"${_rk_tc:,.0f}",   "SUM(COMISION) de todas sus operaciones."), unsafe_allow_html=True)
+                ck4.markdown(_kpi_card("🤝 Comisión Ref.",      f"${_rk_rc:,.0f}",   "Lo que su empresa le paga a este referenciador."), unsafe_allow_html=True)
+                ck5.markdown(_kpi_card("🏢 Comisión Empresa",   f"${_rk_nc:,.0f}",   "Comisión Total − Comisión Referenciador."), unsafe_allow_html=True)
+                ck6.markdown(_kpi_card("📅 Última Operación",   _rk_last,            "Fecha de la operación más reciente de este referenciador."), unsafe_allow_html=True)
+
+            st.markdown("---")
+
+            # ── Month-by-month activity matrix ───────────────────────────────
+            st.subheader("📅 Actividad Mes a Mes por Cliente")
+            st.caption("🟢 Verde = operó ese mes  |  🔴 Rojo = sin registro ese mes  |  El número indica cuántas operaciones realizó.")
+
+            matrix_query = f"""
+                SELECT
+                    CLIENTE,
+                    MES,
+                    COUNT(*)       AS ops,
+                    SUM(COMISION)  AS commission
+                FROM operaciones_bmc
+                {filter_query}
+                {'AND' if filter_query else 'WHERE'} REFERENCIADOR = {int(selected_ref_code)}
+                    AND CLIENTE IS NOT NULL AND MES IS NOT NULL
+                GROUP BY CLIENTE, MES
+            """
+            matrix_df = safe_query(matrix_query, "matriz actividad comercial")
+
+            if not matrix_df.empty:
+                # Order months correctly
+                _month_order = {
+                    'ene': 1, 'feb': 2, 'mar': 3, 'abr': 4, 'may': 5, 'jun': 6,
+                    'jul': 7, 'ago': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dic': 12,
+                }
+                all_months = sorted(
+                    matrix_df['MES'].unique(),
+                    key=lambda m: _month_order.get(m[:3].lower(), 99)
+                )
+                all_clients = sorted(matrix_df['CLIENTE'].unique())
+
+                # Pivot: clients × months, values = ops count (0 = no activity)
+                pivot = matrix_df.pivot_table(
+                    index='CLIENTE', columns='MES', values='ops',
+                    aggfunc='sum', fill_value=0
+                ).reindex(columns=all_months, fill_value=0)
+
+                pivot_comm = matrix_df.pivot_table(
+                    index='CLIENTE', columns='MES', values='commission',
+                    aggfunc='sum', fill_value=0
+                ).reindex(columns=all_months, fill_value=0)
+
+                # Build heatmap
+                import numpy as np
+                z_vals    = pivot.values.astype(float)
+                z_display = [[f"{int(v)} op{'s' if v != 1 else ''}<br>${pivot_comm.loc[r, c]:,.0f}" if v > 0 else "Sin registro"
+                              for c, v in zip(all_months, row)]
+                             for r, row in zip(pivot.index, z_vals)]
+
+                # Binary colour: 1 if active, 0 if not
+                z_binary = (z_vals > 0).astype(float)
+
+                fig_matrix = go.Figure(go.Heatmap(
+                    z=z_binary,
+                    x=all_months,
+                    y=pivot.index.tolist(),
+                    text=z_display,
+                    texttemplate="%{text}",
+                    colorscale=[[0, '#FEE2E2'], [1, '#D1FAE5']],
+                    showscale=False,
+                    hovertemplate='<b>%{y}</b><br>Mes: %{x}<br>%{text}<extra></extra>',
+                    zmin=0, zmax=1,
+                ))
+                fig_matrix.update_layout(
+                    xaxis_title='Mes',
+                    yaxis_title='Cliente',
+                    height=max(350, len(all_clients) * 28 + 100),
+                    margin=dict(l=10, r=10, t=30, b=40),
+                    yaxis=dict(autorange='reversed'),
+                )
+                st.plotly_chart(fig_matrix, use_container_width=True)
+
+                # ── Months-inactive alert ─────────────────────────────────────
+                inactive_clients = [c for c in pivot.index if pivot.loc[c, all_months[-1]] == 0]
+                if inactive_clients:
+                    st.warning(f"⚠️ **{len(inactive_clients)} cliente(s) sin registro en {all_months[-1]}:** " +
+                               ", ".join(inactive_clients[:10]) +
+                               (" …" if len(inactive_clients) > 10 else ""))
+
+            st.markdown("---")
+
+            # ── Detailed performance table per client ─────────────────────────
+            st.subheader("📊 Desempeño Detallado por Cliente")
+
+            detail_ref_query = f"""
+                SELECT
+                    CLIENTE,
+                    COUNT(*)                     AS total_ops,
+                    COUNT(DISTINCT MES)          AS months_active,
+                    SUM(COMISION)                AS total_commission,
+                    SUM(COMISION * ("% REF VENTA" / 100.0))
+                        + SUM(COMISION * ("% REF COMPRA" / 100.0)) AS ref_commission,
+                    MAX("FECHA REGISTRO")        AS last_registration,
+                    MIN("FECHA REGISTRO")        AS first_registration,
+                    SUM("VALOR NEGOCIO")         AS total_volume
+                FROM operaciones_bmc
+                {filter_query}
+                {'AND' if filter_query else 'WHERE'} REFERENCIADOR = {int(selected_ref_code)}
+                    AND CLIENTE IS NOT NULL
+                GROUP BY CLIENTE
+                ORDER BY total_commission DESC
+            """
+            detail_ref_df = safe_query(detail_ref_query, "detalle clientes comercial")
+
+            if not detail_ref_df.empty:
+                n_months_in_period = len(all_months) if not matrix_df.empty else 1
+                detail_ref_df['net_commission']   = detail_ref_df['total_commission'] - detail_ref_df['ref_commission']
+                detail_ref_df['months_inactive']  = n_months_in_period - detail_ref_df['months_active']
+                detail_ref_df['commission_per_op'] = detail_ref_df['total_commission'] / detail_ref_df['total_ops'].replace(0, float('nan'))
+                detail_ref_df['estado'] = detail_ref_df['months_inactive'].apply(
+                    lambda x: '🟢 Activo' if x == 0 else ('🟡 Parcial' if x <= 2 else '🔴 Inactivo')
+                )
+
+                dr_display = detail_ref_df.copy()
+                dr_display['total_ops']         = dr_display['total_ops'].apply(lambda v: f"{int(v):,}")
+                dr_display['months_active']     = dr_display['months_active'].apply(lambda v: f"{int(v)}")
+                dr_display['months_inactive']   = dr_display['months_inactive'].apply(lambda v: f"{int(v)}")
+                dr_display['total_commission']  = dr_display['total_commission'].apply(lambda v: f"${v:,.0f}")
+                dr_display['ref_commission']    = dr_display['ref_commission'].apply(lambda v: f"${v:,.0f}")
+                dr_display['net_commission']    = dr_display['net_commission'].apply(lambda v: f"${v:,.0f}")
+                dr_display['total_volume']      = dr_display['total_volume'].apply(lambda v: f"${v:,.0f}")
+                dr_display['commission_per_op'] = dr_display['commission_per_op'].apply(lambda v: f"${v:,.0f}" if pd.notna(v) else "—")
+                dr_display['last_registration'] = dr_display['last_registration'].apply(lambda v: str(v)[:10] if pd.notna(v) else "—")
+
+                show_cols = ['estado', 'CLIENTE', 'total_ops', 'months_active', 'months_inactive',
+                             'total_commission', 'ref_commission', 'net_commission',
+                             'commission_per_op', 'total_volume', 'last_registration']
+
+                st.dataframe(
+                    dr_display[show_cols],
+                    use_container_width=True,
+                    hide_index=True,
+                    height=500,
+                    column_config={
+                        'estado':            st.column_config.TextColumn('Estado', help='🟢 Activo: registró en todos los meses del período.\n🟡 Parcial: ausente 1–2 meses.\n🔴 Inactivo: ausente 3+ meses.'),
+                        'CLIENTE':           st.column_config.TextColumn('Cliente', help='Nombre del cliente asociado a este referenciador.'),
+                        'total_ops':         st.column_config.TextColumn('Operaciones', help='Total de operaciones registradas en el período.\nFórmula: COUNT(*)'),
+                        'months_active':     st.column_config.TextColumn('Meses Activo', help='Número de meses distintos en los que el cliente registró al menos una operación.\nFórmula: COUNT(DISTINCT MES)'),
+                        'months_inactive':   st.column_config.TextColumn('Meses Sin Registro', help='Meses del período en los que el cliente no registró ninguna operación.\nFórmula: Total meses del período − Meses activos'),
+                        'total_commission':  st.column_config.TextColumn('Comisión Total', help='Suma bruta de comisiones del cliente.\nFórmula: SUM(COMISION)'),
+                        'ref_commission':    st.column_config.TextColumn('Comisión Ref.', help='Lo que su empresa paga al referenciador por este cliente.\nFórmula: SUM(COMISION × % REF VENTA/100) + SUM(COMISION × % REF COMPRA/100)'),
+                        'net_commission':    st.column_config.TextColumn('Comisión Empresa', help='Lo que retiene su empresa.\nFórmula: Comisión Total − Comisión Referenciador'),
+                        'commission_per_op': st.column_config.TextColumn('$ por Operación', help='Comisión promedio por operación de este cliente.\nFórmula: SUM(COMISION) / COUNT(*)'),
+                        'total_volume':      st.column_config.TextColumn('Volumen Total', help='Valor total de negocio operado.\nFórmula: SUM(VALOR NEGOCIO)'),
+                        'last_registration': st.column_config.TextColumn('Última Operación', help='Fecha de la operación más reciente de este cliente.'),
+                    },
+                )
+
+                _inactive_count = (detail_ref_df['months_inactive'] >= 3).sum()
+                if _inactive_count:
+                    st.error(f"🚨 {_inactive_count} cliente(s) con 3+ meses sin registro — requieren seguimiento inmediato.")
 
 # Pie de página
 st.markdown("---")
