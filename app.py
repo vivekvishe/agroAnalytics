@@ -956,8 +956,10 @@ overview_query = f"""
         COUNT(DISTINCT "NOMBRE PRODUCTO") as unique_products,
         SUM("VALOR NEGOCIO") as total_volume,
         SUM(COMISION) as total_commission,
+        SUM(COMISION * ("% REF VENTA" / 100.0))
+            + SUM(COMISION * ("% REF COMPRA" / 100.0)) as ref_commission,
         COUNT(*) as total_ops,
-        AVG(COMISION / NULLIF("VALOR NEGOCIO", 0)) * 100 as avg_commission_rate
+        SUM(COMISION) / NULLIF(SUM("VALOR NEGOCIO"), 0) * 100 as avg_commission_rate
     FROM operaciones_bmc
     {filter_query}
 """
@@ -965,28 +967,36 @@ overview_query = f"""
 overview_data = safe_query(overview_query, "métricas de resumen")
 
 if not overview_data.empty:
-    _tc  = overview_data['total_commission'][0]
-    _tv  = overview_data['total_volume'][0]
-    _cr  = overview_data['avg_commission_rate'][0]
-    _cl  = int(overview_data['unique_clients'][0])
-    _ops = int(overview_data['total_ops'][0])
+    _tc   = overview_data['total_commission'][0]
+    _rc   = overview_data['ref_commission'][0]
+    _nc   = _tc - _rc
+    _tv   = overview_data['total_volume'][0]
+    _cr   = overview_data['avg_commission_rate'][0]
+    _cl   = int(overview_data['unique_clients'][0])
+    _ops  = int(overview_data['total_ops'][0])
 
-    k1, k2, k3, k4, k5 = st.columns(5)
-    with k1:
-        st.metric("💰 Comisiones Ganadas", f"${_tc:,.0f}",
-                  help="Sus ingresos netos por comisiones")
-    with k2:
-        st.metric("📦 Volumen Negociado", f"${_tv:,.0f}",
-                  help="Valor total de las operaciones procesadas")
-    with k3:
-        st.metric("📈 Tasa de Comisión", f"{_cr:.2f}%",
-                  help="Porcentaje promedio ganado por operación")
-    with k4:
-        st.metric("👥 Clientes Activos", f"{_cl:,}",
-                  help="Clientes con operaciones en el período seleccionado")
-    with k5:
-        st.metric("✅ Operaciones", f"{_ops:,}",
-                  help="Total de transacciones procesadas")
+    def _kpi_card(label, value, tooltip):
+        return f"""
+        <div title="{tooltip}" style="
+            background:#f8f9fa; border:1px solid #e0e0e0; border-radius:8px;
+            padding:10px 8px; text-align:center; height:100%; cursor:default;">
+          <div style="font-size:0.72rem; color:#555; font-weight:600;
+                      line-height:1.3; margin-bottom:6px;">{label}</div>
+          <div style="font-size:0.95rem; font-weight:700; color:#111;
+                      word-break:break-all; line-height:1.3;">{value}</div>
+        </div>"""
+
+    _cards = [
+        ("💰 Comisión Total",          f"${_tc:,.0f}",  "Suma bruta de todas las comisiones generadas. Fórmula: SUM(COMISION)"),
+        ("🤝 Comisión Referenciador",  f"${_rc:,.0f}",  "Total pagado a referenciadores. Fórmula: SUM(COMISION × % REF VENTA/100) + SUM(COMISION × % REF COMPRA/100)"),
+        ("🏢 Comisión Empresa (Neta)", f"${_nc:,.0f}",  "Lo que retiene su empresa después de pagar referenciadores. Fórmula: Comisión Total − Comisión Referenciador"),
+        ("📦 Volumen Negociado",       f"${_tv:,.0f}",  "Valor total de las operaciones procesadas. Fórmula: SUM(VALOR NEGOCIO)"),
+        ("👥 Clientes Activos",        f"{_cl:,}",      "Clientes con al menos una operación en el período seleccionado. Fórmula: COUNT(DISTINCT CLIENTE)"),
+        ("📈 Tasa Comisión",           f"{_cr:.2f}%",   "Porcentaje de comisión sobre el volumen total negociado. Fórmula: SUM(COMISION) / SUM(VALOR NEGOCIO) × 100"),
+    ]
+    k1, k2, k3, k4, k5, k6 = st.columns(6)
+    for _col, (_lbl, _val, _tip) in zip([k1, k2, k3, k4, k5, k6], _cards):
+        _col.markdown(_kpi_card(_lbl, _val, _tip), unsafe_allow_html=True)
 
 tabs = st.tabs([
     "📊 Desempeño",
@@ -1029,16 +1039,21 @@ with tabs[0]:
             """)
         
         monthly_query = f"""
-            SELECT 
+            SELECT
                 MES,
                 SUM(COMISION) as commission_earnings,
+                SUM(COMISION * ("% REF VENTA" / 100.0))
+                    + SUM(COMISION * ("% REF COMPRA" / 100.0)) as ref_commission,
+                SUM(COMISION)
+                    - SUM(COMISION * ("% REF VENTA" / 100.0))
+                    - SUM(COMISION * ("% REF COMPRA" / 100.0)) as net_commission,
                 SUM("VALOR NEGOCIO") as client_volume,
                 COUNT(*) as operations
-            FROM operaciones_bmc 
+            FROM operaciones_bmc
             {filter_query}
             GROUP BY MES
-            ORDER BY 
-                CASE 
+            ORDER BY
+                CASE
                     WHEN MES LIKE 'ene%' THEN 1
                     WHEN MES LIKE 'feb%' THEN 2
                     WHEN MES LIKE 'mar%' THEN 3
@@ -1054,33 +1069,45 @@ with tabs[0]:
                     ELSE 0
                 END
         """
-        
+
         with st.expander("🔍 Ver Consulta SQL", expanded=False):
             st.code(monthly_query, language="sql")
-        
+
         monthly_df = safe_query(monthly_query, "tendencia mensual")
-        
+
         if not monthly_df.empty:
             fig_monthly = go.Figure()
             fig_monthly.add_trace(go.Scatter(
-                x=monthly_df['MES'],
-                y=monthly_df['commission_earnings'],
-                mode='lines+markers',
-                name='Comisiones',
+                x=monthly_df['MES'], y=monthly_df['commission_earnings'],
+                mode='lines+markers', name='Comisión Total',
                 line=dict(color='#16A34A', width=3),
                 marker=dict(size=8, color='#16A34A', line=dict(color='white', width=2)),
-                fill='tozeroy',
-                fillcolor='rgba(22,163,74,0.08)',
-                hovertemplate='<b>%{x}</b><br>Comisiones: $%{y:,.0f}<extra></extra>'
+                fill='tozeroy', fillcolor='rgba(22,163,74,0.08)',
+                hovertemplate='Comisión Total: $%{y:,.0f}<extra></extra>'
+            ))
+            fig_monthly.add_trace(go.Scatter(
+                x=monthly_df['MES'], y=monthly_df['ref_commission'],
+                mode='lines+markers', name='Comisión Referenciador',
+                line=dict(color='#F59E0B', width=2, dash='dot'),
+                marker=dict(size=6, color='#F59E0B'),
+                hovertemplate='Comisión Referenciador: $%{y:,.0f}<extra></extra>'
+            ))
+            fig_monthly.add_trace(go.Scatter(
+                x=monthly_df['MES'], y=monthly_df['net_commission'],
+                mode='lines+markers', name='Comisión Empresa (Neta)',
+                line=dict(color='#3B82F6', width=2, dash='dash'),
+                marker=dict(size=6, color='#3B82F6'),
+                hovertemplate='Comisión Empresa: $%{y:,.0f}<extra></extra>'
             ))
             fig_monthly.update_layout(
-                title=dict(text="Comisiones Ganadas por Mes", font=dict(size=15, color='#0f172a')),
+                title=dict(text="Comisiones por Mes — Total · Referenciador · Empresa", font=dict(size=15, color='#0f172a')),
                 xaxis=dict(title="", showgrid=False, tickfont=dict(size=12)),
                 yaxis=dict(title="Comisiones ($)", tickformat='$,.0f', gridcolor='#f1f5f9'),
                 hovermode='x unified',
                 margin=dict(l=60, r=20, t=50, b=40),
                 height=380,
-                showlegend=False,
+                showlegend=True,
+                legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
             )
             st.plotly_chart(fig_monthly, width="stretch")
         else:
@@ -1519,7 +1546,78 @@ with tabs[0]:
             )
         else:
             st.info("No hay datos de referenciadores disponibles")
-    
+
+    # Pivot by referenciador name
+    st.markdown("---")
+    st.subheader("📋 Pivot por Nombre de Referenciador")
+    st.caption("Agrupa todos los códigos que comparten el mismo nombre en una sola fila.")
+
+    if not referenciador_df.empty and _ref_lookup_exists:
+        pivot_df = referenciador_df.copy()
+        pivot_df['REFERENCIADOR'] = pivot_df['REFERENCIADOR'].astype(str)
+
+        pivot_grouped = (
+            pivot_df
+            .groupby('NOMBRE_REF', sort=False)
+            .agg(
+                Códigos=('REFERENCIADOR', lambda x: ', '.join(sorted(x.unique()))),
+                total_commission=('total_commission', 'sum'),
+                referenciador_earnings=('referenciador_earnings', 'sum'),
+                total_volume=('total_volume', 'sum'),
+                total_operations=('total_operations', 'sum'),
+            )
+            .reset_index()
+            .sort_values('total_commission', ascending=False)
+            .rename(columns={'NOMBRE_REF': 'Nombre'})
+        )
+
+        pivot_display = pivot_grouped.copy()
+        pivot_display['total_commission']       = pivot_display['total_commission'].apply(lambda v: f"${v:,.0f}")
+        pivot_display['referenciador_earnings'] = pivot_display['referenciador_earnings'].apply(lambda v: f"${v:,.0f}")
+        pivot_display['total_volume']           = pivot_display['total_volume'].apply(lambda v: f"${v:,.0f}")
+        pivot_display['total_operations']       = pivot_display['total_operations'].apply(lambda v: f"{v:,.0f}")
+
+        _cc2 = st.column_config
+        st.dataframe(
+            pivot_display,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                'Nombre': _cc2.TextColumn(
+                    'Referenciador',
+                    help='Nombre o razón social del referenciador.',
+                ),
+                'Códigos': _cc2.TextColumn(
+                    'Código(s)',
+                    help='Código(s) asociados a este nombre. Si hay más de uno, están separados por coma.',
+                ),
+                'total_commission': _cc2.TextColumn(
+                    'Comisión Total',
+                    help='Suma de comisiones generadas por todas las operaciones de este referenciador.\n'
+                         'Fórmula: SUM(COMISION)',
+                ),
+                'referenciador_earnings': _cc2.TextColumn(
+                    'Comisión Referenciador',
+                    help='Estimación de lo que su empresa paga al referenciador.\n'
+                         'Fórmula: SUM(COMISION × "% REF VENTA" / 100) + SUM(COMISION × "% REF COMPRA" / 100)',
+                ),
+                'total_volume': _cc2.TextColumn(
+                    'Volumen Total',
+                    help='Valor total de negocio operado.\n'
+                         'Fórmula: SUM(VALOR NEGOCIO)',
+                ),
+                'total_operations': _cc2.TextColumn(
+                    'Operaciones',
+                    help='Número total de operaciones asociadas a este referenciador.\n'
+                         'Fórmula: COUNT(*)',
+                ),
+            },
+        )
+    elif not _ref_lookup_exists:
+        st.info("Cargue el archivo de referenciadores para ver esta tabla.")
+    else:
+        st.info("No hay datos de referenciadores disponibles.")
+
     # Desempeño de Productos
     st.markdown("---")
     st.subheader("📦 Desempeño de Productos - Cuáles Productos Le Generan Más Dinero")
@@ -1555,24 +1653,29 @@ with tabs[0]:
     
     with col_prod1:
         products_query = f"""
-            SELECT 
+            SELECT
                 "NOMBRE PRODUCTO",
                 SUM(COMISION) as commission_earnings,
+                SUM(COMISION * ("% REF VENTA" / 100.0))
+                    + SUM(COMISION * ("% REF COMPRA" / 100.0)) as ref_commission,
+                SUM(COMISION)
+                    - SUM(COMISION * ("% REF VENTA" / 100.0))
+                    - SUM(COMISION * ("% REF COMPRA" / 100.0)) as net_commission,
                 SUM("VALOR NEGOCIO") as volume,
                 COUNT(*) as transactions,
                 AVG(COMISION / NULLIF("VALOR NEGOCIO", 0)) * 100 as avg_commission_rate
-            FROM operaciones_bmc 
+            FROM operaciones_bmc
             {filter_query}
             GROUP BY "NOMBRE PRODUCTO"
             ORDER BY commission_earnings DESC
             LIMIT 10
         """
-        
+
         with st.expander("🔍 Ver Consulta SQL", expanded=False):
             st.code(products_query, language="sql")
-        
+
         products_df = safe_query(products_query, "top productos")
-        
+
         if not products_df.empty:
             fig_products = px.treemap(
                 products_df,
@@ -1581,23 +1684,40 @@ with tabs[0]:
                 title="Comisión por Producto (Mapa de Árbol)",
                 color='avg_commission_rate',
                 color_continuous_scale='RdYlGn',
-                labels={'avg_commission_rate': 'Tasa Comisión Prom %'}
+                labels={'avg_commission_rate': 'Tasa Comisión Prom %'},
+                custom_data=['ref_commission', 'net_commission']
+            )
+            fig_products.update_traces(
+                hovertemplate='<b>%{label}</b><br>'
+                              'Comisión Total: $%{value:,.0f}<br>'
+                              'Comisión Referenciador: $%{customdata[0]:,.0f}<br>'
+                              'Comisión Empresa: $%{customdata[1]:,.0f}<extra></extra>'
             )
             st.plotly_chart(fig_products, width="stretch")
         else:
             st.info("No hay datos de productos disponibles")
-    
+
     with col_prod2:
         if not products_df.empty:
+            prod_display = products_df.copy()
+            prod_display['commission_earnings'] = prod_display['commission_earnings'].apply(lambda v: f"${v:,.0f}")
+            prod_display['ref_commission']       = prod_display['ref_commission'].apply(lambda v: f"${v:,.0f}")
+            prod_display['net_commission']       = prod_display['net_commission'].apply(lambda v: f"${v:,.0f}")
+            prod_display['volume']               = prod_display['volume'].apply(lambda v: f"${v:,.0f}")
+            prod_display['transactions']         = prod_display['transactions'].apply(lambda v: f"{v:,.0f}")
+            prod_display['avg_commission_rate']  = prod_display['avg_commission_rate'].apply(lambda v: f"{v:.2f}%")
             st.dataframe(
-                products_df.style.format({
-                    'commission_earnings': '${:,.0f}',
-                    'volume': '${:,.0f}',
-                    'transactions': '{:,.0f}',
-                    'avg_commission_rate': '{:.2f}%'
-                }),
-                width="stretch",
-                height=400
+                prod_display,
+                use_container_width=True, hide_index=True, height=400,
+                column_config={
+                    'NOMBRE PRODUCTO':      st.column_config.TextColumn('Producto', help='Nombre del producto agrícola negociado (maíz, café, arroz, etc.).'),
+                    'commission_earnings':  st.column_config.TextColumn('Comisión Total', help='Suma bruta de comisiones generadas por operaciones de este producto.\nFórmula: SUM(COMISION)'),
+                    'ref_commission':       st.column_config.TextColumn('Comisión Referenciador', help='Total pagado a referenciadores por operaciones de este producto.\nFórmula: SUM(COMISION × % REF VENTA/100) + SUM(COMISION × % REF COMPRA/100)'),
+                    'net_commission':       st.column_config.TextColumn('Comisión Empresa', help='Lo que retiene su empresa después de pagar referenciadores, para este producto.\nFórmula: Comisión Total − Comisión Referenciador'),
+                    'volume':               st.column_config.TextColumn('Volumen', help='Valor total de negocio operado en este producto.\nFórmula: SUM("VALOR NEGOCIO")'),
+                    'transactions':         st.column_config.TextColumn('Operaciones', help='Número de operaciones registradas para este producto.\nFórmula: COUNT(*)'),
+                    'avg_commission_rate':  st.column_config.TextColumn('Tasa Prom %', help='Porcentaje promedio de comisión sobre el valor de negocio para este producto.\nFórmula: AVG(COMISION / "VALOR NEGOCIO") × 100'),
+                },
             )
 
 # --- PESTAÑA 2: PERSPECTIVAS ESTRATÉGICAS ---
@@ -1652,6 +1772,8 @@ with tabs[1]:
                     sub.last_transaction,
                     sub.days_inactive,
                     sub.lifetime_commission,
+                    sub.ref_commission,
+                    sub.lifetime_commission - sub.ref_commission AS net_commission,
                     sub.total_transactions,
                     COALESCE(r.NOMBRE, CAST(sub.main_referenciador AS VARCHAR)) AS referenciador
                 FROM (
@@ -1660,6 +1782,8 @@ with tabs[1]:
                         MAX("FECHA REGISTRO") as last_transaction,
                         DATE_DIFF('day', MAX(TRY_CAST("FECHA REGISTRO" AS DATE)), CURRENT_DATE) as days_inactive,
                         SUM(COMISION) as lifetime_commission,
+                        SUM(COMISION * ("% REF VENTA" / 100.0))
+                            + SUM(COMISION * ("% REF COMPRA" / 100.0)) as ref_commission,
                         COUNT(*) as total_transactions,
                         mode(REFERENCIADOR) as main_referenciador
                     FROM operaciones_bmc
@@ -1678,6 +1802,11 @@ with tabs[1]:
                     MAX("FECHA REGISTRO") as last_transaction,
                     DATE_DIFF('day', MAX(TRY_CAST("FECHA REGISTRO" AS DATE)), CURRENT_DATE) as days_inactive,
                     SUM(COMISION) as lifetime_commission,
+                    SUM(COMISION * ("% REF VENTA" / 100.0))
+                        + SUM(COMISION * ("% REF COMPRA" / 100.0)) as ref_commission,
+                    SUM(COMISION)
+                        - SUM(COMISION * ("% REF VENTA" / 100.0))
+                        - SUM(COMISION * ("% REF COMPRA" / 100.0)) as net_commission,
                     COUNT(*) as total_transactions
                 FROM operaciones_bmc
                 {filter_query}
@@ -1693,12 +1822,29 @@ with tabs[1]:
         churn_df = safe_query(churn_query, "análisis de fuga")
 
         if not churn_df.empty:
-            fmt = {
-                'days_inactive': '{:.0f}',
-                'lifetime_commission': '${:,.0f}',
-                'total_transactions': '{:,.0f}'
+            churn_display = churn_df.copy()
+            churn_display['days_inactive']      = churn_display['days_inactive'].apply(lambda v: f"{v:.0f}")
+            churn_display['lifetime_commission'] = churn_display['lifetime_commission'].apply(lambda v: f"${v:,.0f}")
+            churn_display['ref_commission']      = churn_display['ref_commission'].apply(lambda v: f"${v:,.0f}")
+            churn_display['net_commission']      = churn_display['net_commission'].apply(lambda v: f"${v:,.0f}")
+            churn_display['total_transactions']  = churn_display['total_transactions'].apply(lambda v: f"{v:,.0f}")
+
+            churn_col_config = {
+                'CLIENTE': st.column_config.TextColumn('Cliente', help='Nombre del cliente registrado en las operaciones.'),
+                'last_transaction': st.column_config.TextColumn('Última Operación', help='Fecha de la última operación registrada para este cliente.'),
+                'days_inactive': st.column_config.TextColumn('Días Inactivo', help='Días transcurridos desde la última operación hasta hoy.'),
+                'lifetime_commission': st.column_config.TextColumn('Comisión Total', help='Suma bruta de comisiones históricas.\nFórmula: SUM(COMISION)'),
+                'ref_commission': st.column_config.TextColumn('Comisión Referenciador', help='Lo pagado al referenciador en comisiones.\nFórmula: SUM(COMISION × % REF VENTA/100) + SUM(COMISION × % REF COMPRA/100)'),
+                'net_commission': st.column_config.TextColumn('Comisión Empresa', help='Lo que retiene su empresa.\nFórmula: Comisión Total − Comisión Referenciador'),
+                'total_transactions': st.column_config.TextColumn('Operaciones', help='Número total de operaciones históricas del cliente.\nFórmula: COUNT(*)'),
             }
-            st.dataframe(churn_df.style.format(fmt), width="stretch")
+            if _ref_lookup_exists and 'referenciador' in churn_display.columns:
+                churn_col_config['referenciador'] = st.column_config.TextColumn(
+                    'Referenciador',
+                    help='Referenciador responsable de la mayoría de las operaciones de este cliente.',
+                )
+
+            st.dataframe(churn_display, use_container_width=True, hide_index=True, column_config=churn_col_config)
             total_at_risk = churn_df['lifetime_commission'].sum()
             st.error(f"🚨 **URGENTE:** ¡{len(churn_df)} clientes de alto valor en riesgo! Le han pagado ${total_at_risk:,.0f} en comisiones históricamente!")
             st.markdown("**Acción Requerida:** ¡Contacte a estos clientes de inmediato para evitar pérdida permanente de comisiones!")
@@ -1759,7 +1905,20 @@ with tabs[1]:
         cross_sell_df = safe_query(cross_sell_query, "análisis de venta cruzada")
         
         if not cross_sell_df.empty:
-            st.dataframe(cross_sell_df, width="stretch")
+            cross_sell_display = cross_sell_df.copy()
+            cross_sell_display['shared_clients'] = cross_sell_display['shared_clients'].apply(lambda x: f'{int(x):,}')
+            cross_sell_display['market_penetration'] = cross_sell_display['market_penetration'].apply(lambda x: f'{x:.2f}%')
+            st.dataframe(
+                cross_sell_display,
+                width="stretch",
+                hide_index=True,
+                column_config={
+                    'product_a': st.column_config.TextColumn('Producto A', help='Primer producto del par de venta cruzada. Los pares están ordenados alfabéticamente para evitar duplicados.'),
+                    'product_b': st.column_config.TextColumn('Producto B', help='Segundo producto del par. Clientes que operan este producto también operan Producto A.'),
+                    'shared_clients': st.column_config.TextColumn('Clientes Compartidos', help='Número de clientes distintos que han operado ambos productos en el período filtrado.\nFórmula: COUNT(DISTINCT cliente) — solo pares con ≥ 3 clientes compartidos'),
+                    'market_penetration': st.column_config.TextColumn('Penetración de Mercado', help='Porcentaje de sus clientes totales que han operado ambos productos. Indica qué tan común es este par.\nFórmula: (Clientes Compartidos / Total Clientes) × 100'),
+                }
+            )
             st.info("💡 Cree ofertas agrupadas para los mejores pares de productos")
         else:
             st.info("No hay suficientes datos para el análisis de venta cruzada")
@@ -1795,9 +1954,11 @@ with tabs[1]:
     
     segment_query = f"""
         WITH client_stats AS (
-            SELECT 
+            SELECT
                 CLIENTE,
                 SUM(COMISION) as total_commission,
+                SUM(COMISION * ("% REF VENTA" / 100.0))
+                    + SUM(COMISION * ("% REF COMPRA" / 100.0)) as ref_commission,
                 COUNT(*) as transaction_count,
                 AVG(COMISION) as avg_commission_per_transaction,
                 SUM("VALOR NEGOCIO") as total_volume
@@ -1805,9 +1966,9 @@ with tabs[1]:
             {filter_query}
             GROUP BY CLIENTE
         )
-        SELECT 
-            CASE 
-                WHEN total_commission >= (SELECT PERCENTILE_CONT(0.8) WITHIN GROUP (ORDER BY total_commission) FROM client_stats) 
+        SELECT
+            CASE
+                WHEN total_commission >= (SELECT PERCENTILE_CONT(0.8) WITHIN GROUP (ORDER BY total_commission) FROM client_stats)
                     THEN 'VIP (Top 20%)'
                 WHEN total_commission >= (SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY total_commission) FROM client_stats)
                     THEN 'Alto Valor (50-80%)'
@@ -1817,22 +1978,24 @@ with tabs[1]:
             END as segment,
             COUNT(*) as client_count,
             SUM(total_commission) as segment_commission,
+            SUM(ref_commission) as segment_ref_commission,
+            SUM(total_commission) - SUM(ref_commission) as segment_net_commission,
             AVG(transaction_count) as avg_transactions,
             AVG(avg_commission_per_transaction) as avg_commission_per_deal
         FROM client_stats
         GROUP BY segment
         ORDER BY segment_commission DESC
     """
-    
+
     with st.expander("🔍 Ver Consulta SQL", expanded=False):
         st.code(segment_query, language="sql")
-    
+
     segment_df = safe_query(segment_query, "segmentación de clientes")
-    
+
     if not segment_df.empty:
         col_seg1 = st.container()
         col_seg2 = st.container()
-        
+
         with col_seg1:
             fig_segment = px.pie(
                 segment_df,
@@ -1843,47 +2006,219 @@ with tabs[1]:
                 color_discrete_sequence=px.colors.sequential.Greens_r
             )
             fig_segment.update_traces(
-                hovertemplate='<b>%{label}</b><br>Clientes: %{value}<br>Comisiones: $%{customdata[0]:,.0f}<extra></extra>',
-                customdata=segment_df[['segment_commission']]
+                hovertemplate='<b>%{label}</b><br>Clientes: %{value}<br>'
+                              'Comisión Total: $%{customdata[0]:,.0f}<br>'
+                              'Comisión Ref.: $%{customdata[1]:,.0f}<br>'
+                              'Comisión Empresa: $%{customdata[2]:,.0f}<extra></extra>',
+                customdata=segment_df[['segment_commission', 'segment_ref_commission', 'segment_net_commission']]
             )
             st.plotly_chart(fig_segment, width="stretch")
             st.caption("📊 Distribución de clientes por segmento de valor")
-        
+
         with col_seg2:
-            fig_commission = px.bar(
-                segment_df,
-                x='segment',
-                y='segment_commission',
-                title='Contribución de Comisión por Segmento - SUS Ganancias',
-                labels={'segment_commission': 'Comisión ($) - SUS GANANCIAS', 'segment': 'Segmento de Cliente'},
-                color='segment_commission',
-                color_continuous_scale='Greens',
-                text='segment_commission'
-            )
-            fig_commission.update_traces(
-                texttemplate='$%{text:,.0f}',
-                textposition='outside'
+            fig_commission = go.Figure()
+            fig_commission.add_trace(go.Bar(
+                name='Comisión Empresa', x=segment_df['segment'], y=segment_df['segment_net_commission'],
+                marker_color='#16A34A', text=segment_df['segment_net_commission'],
+                texttemplate='$%{text:,.0f}', textposition='inside'
+            ))
+            fig_commission.add_trace(go.Bar(
+                name='Comisión Referenciador', x=segment_df['segment'], y=segment_df['segment_ref_commission'],
+                marker_color='#F59E0B', text=segment_df['segment_ref_commission'],
+                texttemplate='$%{text:,.0f}', textposition='inside'
+            ))
+            fig_commission.update_layout(
+                barmode='stack', title='Comisión por Segmento — Total · Ref · Empresa',
+                xaxis_title='Segmento', yaxis=dict(title='Comisión ($)', tickformat='$,.0f'),
+                height=380, margin=dict(l=60, r=20, t=50, b=40),
+                legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
             )
             st.plotly_chart(fig_commission, width="stretch")
             st.caption("💰 Cuánto le paga en comisiones cada segmento")
-        
+
         st.markdown("**Desglose Detallado por Segmento**")
-        display_segment_df = segment_df.copy()
+        seg_display = segment_df.copy()
+        seg_display['segment_commission']     = seg_display['segment_commission'].apply(lambda v: f"${v:,.0f}")
+        seg_display['segment_ref_commission'] = seg_display['segment_ref_commission'].apply(lambda v: f"${v:,.0f}")
+        seg_display['segment_net_commission'] = seg_display['segment_net_commission'].apply(lambda v: f"${v:,.0f}")
+        seg_display['client_count']           = seg_display['client_count'].apply(lambda v: f"{v:,.0f}")
+        seg_display['avg_transactions']       = seg_display['avg_transactions'].apply(lambda v: f"{v:,.1f}")
+        seg_display['avg_commission_per_deal']= seg_display['avg_commission_per_deal'].apply(lambda v: f"${v:,.0f}")
         st.dataframe(
-            display_segment_df.style.format({
-                'client_count': '{:,.0f}',
-                'segment_commission': '${:,.0f}',
-                'avg_transactions': '{:,.1f}',
-                'avg_commission_per_deal': '${:,.0f}'
-            }),
-            width="stretch"
+            seg_display,
+            use_container_width=True, hide_index=True,
+            column_config={
+                'segment':                  st.column_config.TextColumn('Segmento', help='Categoría de valor del cliente basada en el percentil de comisiones generadas:\n• VIP (Top 20%): Los que más comisiones aportan\n• Alto Valor (50–80%): Buenos generadores de comisión\n• Valor Medio (20–50%): Aportadores moderados\n• Bajo Valor (inferior 20%): Clientes nuevos u ocasionales'),
+                'client_count':             st.column_config.TextColumn('Clientes', help='Número de clientes en este segmento.\nFórmula: COUNT(DISTINCT CLIENTE)'),
+                'segment_commission':       st.column_config.TextColumn('Comisión Total', help='Suma bruta de comisiones generadas por todos los clientes de este segmento.\nFórmula: SUM(COMISION)'),
+                'segment_ref_commission':   st.column_config.TextColumn('Comisión Referenciador', help='Total pagado a referenciadores por clientes de este segmento.\nFórmula: SUM(COMISION × % REF VENTA/100) + SUM(COMISION × % REF COMPRA/100)'),
+                'segment_net_commission':   st.column_config.TextColumn('Comisión Empresa', help='Lo que retiene su empresa después de pagar referenciadores, para este segmento.\nFórmula: Comisión Total − Comisión Referenciador'),
+                'avg_transactions':         st.column_config.TextColumn('Transacc. Prom.', help='Número promedio de transacciones por cliente en este segmento.\nFórmula: AVG(COUNT(*) por CLIENTE)'),
+                'avg_commission_per_deal':  st.column_config.TextColumn('Comisión Prom/Op', help='Comisión promedio por operación para clientes de este segmento.\nFórmula: AVG(COMISION) por operación dentro del segmento'),
+            },
         )
         
         vip_commission = segment_df[segment_df['segment'] == 'VIP (Top 20%)']['segment_commission'].sum()
         total_commission = segment_df['segment_commission'].sum()
         vip_percentage = (vip_commission / total_commission * 100) if total_commission > 0 else 0
-        
+
         st.info(f"💎 **Perspectiva VIP:** Su top 20% de clientes genera **${vip_commission:,.0f}** ({vip_percentage:.1f}%) de sus comisiones totales!")
+
+        # ── Detailed per-client report ─────────────────────────────────────────
+        with st.expander("📋 Ver Informe Detallado por Cliente", expanded=False):
+            if _ref_lookup_exists:
+                detail_query = f"""
+                    WITH client_stats AS (
+                        SELECT
+                            CLIENTE,
+                            mode(REFERENCIADOR) AS main_ref,
+                            SUM(COMISION) AS total_commission,
+                            SUM(COMISION * ("% REF VENTA" / 100.0))
+                                + SUM(COMISION * ("% REF COMPRA" / 100.0)) AS ref_commission,
+                            COUNT(*) AS transaction_count,
+                            SUM("VALOR NEGOCIO") AS total_volume
+                        FROM operaciones_bmc
+                        {filter_query}
+                        GROUP BY CLIENTE
+                    ),
+                    pcts AS (
+                        SELECT
+                            PERCENTILE_CONT(0.8) WITHIN GROUP (ORDER BY total_commission) AS p80,
+                            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY total_commission) AS p50,
+                            PERCENTILE_CONT(0.2) WITHIN GROUP (ORDER BY total_commission) AS p20
+                        FROM client_stats
+                    )
+                    SELECT
+                        CASE
+                            WHEN cs.total_commission >= p.p80 THEN 'VIP (Top 20%)'
+                            WHEN cs.total_commission >= p.p50 THEN 'Alto Valor (50-80%)'
+                            WHEN cs.total_commission >= p.p20 THEN 'Valor Medio (20-50%)'
+                            ELSE 'Bajo Valor (Inferior 20%)'
+                        END AS segment,
+                        cs.CLIENTE,
+                        COALESCE(r.NOMBRE, CAST(cs.main_ref AS VARCHAR)) AS nombre_ref,
+                        cs.total_commission,
+                        cs.ref_commission,
+                        cs.total_commission - cs.ref_commission AS net_commission,
+                        cs.transaction_count,
+                        cs.total_volume
+                    FROM client_stats cs
+                    CROSS JOIN pcts p
+                    LEFT JOIN referenciadores r ON cs.main_ref = r.CODIGO
+                    ORDER BY cs.total_commission DESC
+                """
+            else:
+                detail_query = f"""
+                    WITH client_stats AS (
+                        SELECT
+                            CLIENTE,
+                            SUM(COMISION) AS total_commission,
+                            SUM(COMISION * ("% REF VENTA" / 100.0))
+                                + SUM(COMISION * ("% REF COMPRA" / 100.0)) AS ref_commission,
+                            COUNT(*) AS transaction_count,
+                            SUM("VALOR NEGOCIO") AS total_volume
+                        FROM operaciones_bmc
+                        {filter_query}
+                        GROUP BY CLIENTE
+                    ),
+                    pcts AS (
+                        SELECT
+                            PERCENTILE_CONT(0.8) WITHIN GROUP (ORDER BY total_commission) AS p80,
+                            PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY total_commission) AS p50,
+                            PERCENTILE_CONT(0.2) WITHIN GROUP (ORDER BY total_commission) AS p20
+                        FROM client_stats
+                    )
+                    SELECT
+                        CASE
+                            WHEN cs.total_commission >= p.p80 THEN 'VIP (Top 20%)'
+                            WHEN cs.total_commission >= p.p50 THEN 'Alto Valor (50-80%)'
+                            WHEN cs.total_commission >= p.p20 THEN 'Valor Medio (20-50%)'
+                            ELSE 'Bajo Valor (Inferior 20%)'
+                        END AS segment,
+                        cs.CLIENTE,
+                        cs.total_commission,
+                        cs.ref_commission,
+                        cs.total_commission - cs.ref_commission AS net_commission,
+                        cs.transaction_count,
+                        cs.total_volume
+                    FROM client_stats cs
+                    CROSS JOIN pcts p
+                    ORDER BY cs.total_commission DESC
+                """
+
+            segment_order = ['VIP (Top 20%)', 'Alto Valor (50-80%)', 'Valor Medio (20-50%)', 'Bajo Valor (Inferior 20%)']
+            selected_segment = st.selectbox(
+                "Seleccionar segmento",
+                options=segment_order,
+                key="segment_detail_filter",
+            )
+
+            _seg_filter_map = {
+                'VIP (Top 20%)':           'cs.total_commission >= p.p80',
+                'Alto Valor (50-80%)':     'cs.total_commission >= p.p50 AND cs.total_commission < p.p80',
+                'Valor Medio (20-50%)':    'cs.total_commission >= p.p20 AND cs.total_commission < p.p50',
+                'Bajo Valor (Inferior 20%)': 'cs.total_commission < p.p20',
+            }
+            _seg_where = _seg_filter_map[selected_segment]
+
+            if _ref_lookup_exists:
+                detail_query = detail_query.replace(
+                    "ORDER BY cs.total_commission DESC",
+                    f"WHERE {_seg_where}\n                    ORDER BY cs.total_commission DESC"
+                )
+            else:
+                detail_query = detail_query.replace(
+                    "ORDER BY cs.total_commission DESC",
+                    f"WHERE {_seg_where}\n                    ORDER BY cs.total_commission DESC"
+                )
+
+            detail_df = safe_query(detail_query, "detalle clientes por segmento")
+
+            if not detail_df.empty:
+                st.caption(f"Mostrando {len(detail_df)} cliente(s) en **{selected_segment}**")
+
+                det_display = detail_df.copy()
+                det_display['total_commission']   = det_display['total_commission'].apply(lambda v: f"${v:,.0f}")
+                det_display['ref_commission']     = det_display['ref_commission'].apply(lambda v: f"${v:,.0f}")
+                det_display['net_commission']     = det_display['net_commission'].apply(lambda v: f"${v:,.0f}")
+                det_display['transaction_count']  = det_display['transaction_count'].apply(lambda v: f"{int(v):,}")
+                det_display['total_volume']       = det_display['total_volume'].apply(lambda v: f"${v:,.0f}")
+
+                _seg_colors = {
+                    'VIP (Top 20%)': '🥇',
+                    'Alto Valor (50-80%)': '🥈',
+                    'Valor Medio (20-50%)': '🥉',
+                    'Bajo Valor (Inferior 20%)': '▪️',
+                }
+                det_display['segment'] = det_display['segment'].apply(lambda s: f"{_seg_colors.get(s, '')} {s}")
+
+                det_col_config = {
+                    'segment':          st.column_config.TextColumn('Segmento', help='Categoría asignada según el percentil de comisión total del cliente dentro del período filtrado.'),
+                    'CLIENTE':          st.column_config.TextColumn('Cliente', help='Nombre del cliente registrado en las operaciones.'),
+                    'total_commission': st.column_config.TextColumn('Comisión Total', help='Suma de todas las comisiones brutas generadas por este cliente.\nFórmula: SUM(COMISION)'),
+                    'ref_commission':   st.column_config.TextColumn('Comisión Referenciador', help='Monto pagado al referenciador por operaciones de este cliente.\nFórmula: SUM(COMISION × % REF VENTA/100) + SUM(COMISION × % REF COMPRA/100)'),
+                    'net_commission':   st.column_config.TextColumn('Comisión Empresa', help='Lo que retiene su empresa después de pagar al referenciador.\nFórmula: Comisión Total − Comisión Referenciador'),
+                    'transaction_count': st.column_config.TextColumn('Operaciones', help='Número de operaciones del cliente en el período.\nFórmula: COUNT(*)'),
+                    'total_volume':     st.column_config.TextColumn('Volumen', help='Valor total de negocio operado por este cliente.\nFórmula: SUM("VALOR NEGOCIO")'),
+                }
+                if _ref_lookup_exists and 'nombre_ref' in det_display.columns:
+                    det_col_config['nombre_ref'] = st.column_config.TextColumn(
+                        'Referenciador',
+                        help='Referenciador más frecuente en las operaciones de este cliente (moda estadística de REFERENCIADOR).',
+                    )
+                    show_det_cols = ['segment', 'CLIENTE', 'nombre_ref', 'total_commission', 'ref_commission', 'net_commission', 'transaction_count', 'total_volume']
+                else:
+                    show_det_cols = ['segment', 'CLIENTE', 'total_commission', 'ref_commission', 'net_commission', 'transaction_count', 'total_volume']
+
+                st.dataframe(
+                    det_display[show_det_cols],
+                    use_container_width=True,
+                    hide_index=True,
+                    height=500,
+                    column_config=det_col_config,
+                )
+            else:
+                st.info("No hay datos de clientes para mostrar.")
 
 # --- PESTAÑA 3: RED COMPRADORES-VENDEDORES ---
 with tabs[2]:
@@ -1929,107 +2264,211 @@ with tabs[2]:
             """)
         
         seller_hub_where = filter_query + (" AND " if filter_query else "WHERE ") + '"NOMBRE VENDEDOR" IS NOT NULL AND "NIT COMPRADOR" IS NOT NULL'
-        seller_hub_query = f"""
-            SELECT 
-                "NOMBRE VENDEDOR" as seller,
-                COUNT(DISTINCT "NIT COMPRADOR") as unique_buyers,
-                SUM(COMISION) as total_commission,
-                COUNT(*) as total_transactions,
-                SUM("VALOR NEGOCIO") as total_volume
-            FROM operaciones_bmc
-            {seller_hub_where}
-            GROUP BY "NOMBRE VENDEDOR"
-            HAVING COUNT(DISTINCT "NIT COMPRADOR") >= 2
-            ORDER BY unique_buyers DESC, total_commission DESC
-            LIMIT 10
-        """
-        
+
+        if _ref_lookup_exists:
+            seller_hub_query = f"""
+                SELECT sub.seller, sub.unique_buyers, sub.total_commission,
+                       sub.ref_commission,
+                       sub.total_commission - sub.ref_commission AS net_commission,
+                       sub.total_transactions, sub.total_volume,
+                       COALESCE(r.NOMBRE, CAST(sub.main_ref AS VARCHAR)) AS nombre_ref
+                FROM (
+                    SELECT "NOMBRE VENDEDOR" as seller,
+                           COUNT(DISTINCT "NIT COMPRADOR") as unique_buyers,
+                           SUM(COMISION) as total_commission,
+                           SUM(COMISION * ("% REF VENTA" / 100.0))
+                               + SUM(COMISION * ("% REF COMPRA" / 100.0)) as ref_commission,
+                           COUNT(*) as total_transactions,
+                           SUM("VALOR NEGOCIO") as total_volume,
+                           mode(REFERENCIADOR) as main_ref
+                    FROM operaciones_bmc
+                    {seller_hub_where}
+                    GROUP BY "NOMBRE VENDEDOR"
+                    HAVING COUNT(DISTINCT "NIT COMPRADOR") >= 2
+                    ORDER BY unique_buyers DESC, total_commission DESC
+                    LIMIT 10
+                ) sub
+                LEFT JOIN referenciadores r ON sub.main_ref = r.CODIGO
+            """
+        else:
+            seller_hub_query = f"""
+                SELECT "NOMBRE VENDEDOR" as seller,
+                       COUNT(DISTINCT "NIT COMPRADOR") as unique_buyers,
+                       SUM(COMISION) as total_commission,
+                       SUM(COMISION * ("% REF VENTA" / 100.0))
+                           + SUM(COMISION * ("% REF COMPRA" / 100.0)) as ref_commission,
+                       SUM(COMISION)
+                           - SUM(COMISION * ("% REF VENTA" / 100.0))
+                           - SUM(COMISION * ("% REF COMPRA" / 100.0)) as net_commission,
+                       COUNT(*) as total_transactions,
+                       SUM("VALOR NEGOCIO") as total_volume
+                FROM operaciones_bmc
+                {seller_hub_where}
+                GROUP BY "NOMBRE VENDEDOR"
+                HAVING COUNT(DISTINCT "NIT COMPRADOR") >= 2
+                ORDER BY unique_buyers DESC, total_commission DESC
+                LIMIT 10
+            """
+
         with st.expander("🔍 Ver Consulta SQL", expanded=False):
             st.code(seller_hub_query, language="sql")
-        
+
         seller_hubs_df = safe_query(seller_hub_query, "nodos vendedores")
-        
+
         if not seller_hubs_df.empty:
             st.markdown("**🏭 Principales Nodos de Vendedores (Más Conectados)**")
-            
-            fig_seller_hub = px.bar(
-                seller_hubs_df,
-                x='unique_buyers',
-                y='seller',
+
+            _sh_has_ref = 'nombre_ref' in seller_hubs_df.columns
+            _sh_cd_cols = ['total_commission', 'ref_commission', 'net_commission', 'total_transactions']
+            if _sh_has_ref:
+                _sh_cd_cols.append('nombre_ref')
+            fig_seller_hub = go.Figure()
+            fig_seller_hub.add_trace(go.Bar(
+                x=seller_hubs_df['unique_buyers'],
+                y=seller_hubs_df['seller'],
                 orientation='h',
+                marker=dict(color=seller_hubs_df['total_commission'], colorscale='Oranges', showscale=False),
+                customdata=seller_hubs_df[_sh_cd_cols].values,
+                hovertemplate=(
+                    '<b>%{y}</b><br>Compradores Únicos: %{x}<br>'
+                    'Comisión Total: $%{customdata[0]:,.0f}<br>'
+                    'Comisión Ref.: $%{customdata[1]:,.0f}<br>'
+                    'Comisión Empresa: $%{customdata[2]:,.0f}<br>'
+                    'Transacciones: %{customdata[3]:,.0f}<br>'
+                    + ('Referenciador: %{customdata[4]}<extra></extra>' if _sh_has_ref else '<extra></extra>')
+                ),
+            ))
+            fig_seller_hub.update_layout(
                 title='Vendedores con Más Compradores Únicos',
-                labels={'unique_buyers': 'Número de Compradores Únicos', 'seller': 'Vendedor'},
-                color='total_commission',
-                color_continuous_scale='Oranges',
-                hover_data=['total_commission', 'total_transactions']
-            )
-            fig_seller_hub.update_traces(
-                hovertemplate='<b>%{y}</b><br>Compradores Únicos: %{x}<br>Comisión: $%{customdata[0]:,.0f}<br>Transacciones: %{customdata[1]:,.0f}<extra></extra>'
+                xaxis_title='Número de Compradores Únicos', yaxis_title='Vendedor',
+                height=400, margin=dict(l=20, r=20, t=50, b=20),
             )
             st.plotly_chart(fig_seller_hub, width="stretch")
-            
-            st.dataframe(
-                seller_hubs_df.style.format({
-                    'unique_buyers': '{:,.0f}',
-                    'total_commission': '${:,.0f}',
-                    'total_transactions': '{:,.0f}',
-                    'total_volume': '${:,.0f}'
-                }),
-                width="stretch"
-            )
+
+            sh_display = seller_hubs_df.copy()
+            sh_display['unique_buyers']      = sh_display['unique_buyers'].apply(lambda v: f"{v:,.0f}")
+            sh_display['total_commission']   = sh_display['total_commission'].apply(lambda v: f"${v:,.0f}")
+            sh_display['ref_commission']     = sh_display['ref_commission'].apply(lambda v: f"${v:,.0f}")
+            sh_display['net_commission']     = sh_display['net_commission'].apply(lambda v: f"${v:,.0f}")
+            sh_display['total_transactions'] = sh_display['total_transactions'].apply(lambda v: f"{v:,.0f}")
+            sh_display['total_volume']       = sh_display['total_volume'].apply(lambda v: f"${v:,.0f}")
+            sh_cols = {
+                'seller':           st.column_config.TextColumn('Vendedor', help='Nombre del vendedor en las operaciones de la BMC.'),
+                'unique_buyers':    st.column_config.TextColumn('Compradores Únicos', help='Cuántos compradores distintos ha tenido este vendedor en el período.\nFórmula: COUNT(DISTINCT "NIT COMPRADOR")'),
+                'total_commission': st.column_config.TextColumn('Comisión Total', help='Suma bruta de comisiones generadas por operaciones de este vendedor.\nFórmula: SUM(COMISION)'),
+                'ref_commission':   st.column_config.TextColumn('Comisión Ref.', help='Total pagado al referenciador por operaciones de este vendedor.\nFórmula: SUM(COMISION × % REF VENTA/100) + SUM(COMISION × % REF COMPRA/100)'),
+                'net_commission':   st.column_config.TextColumn('Comisión Empresa', help='Lo que retiene su empresa después de pagar referenciadores.\nFórmula: Comisión Total − Comisión Referenciador'),
+                'total_transactions': st.column_config.TextColumn('Transacciones', help='Número total de operaciones en que este vendedor participó.\nFórmula: COUNT(*)'),
+                'total_volume':     st.column_config.TextColumn('Volumen Total', help='Valor total de negocio en operaciones de este vendedor.\nFórmula: SUM("VALOR NEGOCIO")'),
+            }
+            if _sh_has_ref:
+                sh_cols['nombre_ref'] = st.column_config.TextColumn('Referenciador', help='Referenciador más frecuente en las operaciones de este vendedor (moda estadística).')
+            st.dataframe(sh_display, use_container_width=True, hide_index=True, column_config=sh_cols)
         else:
             st.info("No hay datos de nodos de vendedores disponibles")
     
     with col_net2:
         buyer_hub_where = filter_query + (" AND " if filter_query else "WHERE ") + '"NOMBRE COMPRADOR" IS NOT NULL AND "NIT VENDEDOR" IS NOT NULL'
-        buyer_hub_query = f"""
-            SELECT 
-                "NOMBRE COMPRADOR" as buyer,
-                COUNT(DISTINCT "NIT VENDEDOR") as unique_sellers,
-                SUM(COMISION) as total_commission,
-                COUNT(*) as total_transactions,
-                SUM("VALOR NEGOCIO") as total_volume
-            FROM operaciones_bmc
-            {buyer_hub_where}
-            GROUP BY "NOMBRE COMPRADOR"
-            HAVING COUNT(DISTINCT "NIT VENDEDOR") >= 2
-            ORDER BY unique_sellers DESC, total_commission DESC
-            LIMIT 10
-        """
-        
+
+        if _ref_lookup_exists:
+            buyer_hub_query = f"""
+                SELECT sub.buyer, sub.unique_sellers, sub.total_commission,
+                       sub.ref_commission,
+                       sub.total_commission - sub.ref_commission AS net_commission,
+                       sub.total_transactions, sub.total_volume,
+                       COALESCE(r.NOMBRE, CAST(sub.main_ref AS VARCHAR)) AS nombre_ref
+                FROM (
+                    SELECT "NOMBRE COMPRADOR" as buyer,
+                           COUNT(DISTINCT "NIT VENDEDOR") as unique_sellers,
+                           SUM(COMISION) as total_commission,
+                           SUM(COMISION * ("% REF VENTA" / 100.0))
+                               + SUM(COMISION * ("% REF COMPRA" / 100.0)) as ref_commission,
+                           COUNT(*) as total_transactions,
+                           SUM("VALOR NEGOCIO") as total_volume,
+                           mode(REFERENCIADOR) as main_ref
+                    FROM operaciones_bmc
+                    {buyer_hub_where}
+                    GROUP BY "NOMBRE COMPRADOR"
+                    HAVING COUNT(DISTINCT "NIT VENDEDOR") >= 2
+                    ORDER BY unique_sellers DESC, total_commission DESC
+                    LIMIT 10
+                ) sub
+                LEFT JOIN referenciadores r ON sub.main_ref = r.CODIGO
+            """
+        else:
+            buyer_hub_query = f"""
+                SELECT "NOMBRE COMPRADOR" as buyer,
+                       COUNT(DISTINCT "NIT VENDEDOR") as unique_sellers,
+                       SUM(COMISION) as total_commission,
+                       SUM(COMISION * ("% REF VENTA" / 100.0))
+                           + SUM(COMISION * ("% REF COMPRA" / 100.0)) as ref_commission,
+                       SUM(COMISION)
+                           - SUM(COMISION * ("% REF VENTA" / 100.0))
+                           - SUM(COMISION * ("% REF COMPRA" / 100.0)) as net_commission,
+                       COUNT(*) as total_transactions,
+                       SUM("VALOR NEGOCIO") as total_volume
+                FROM operaciones_bmc
+                {buyer_hub_where}
+                GROUP BY "NOMBRE COMPRADOR"
+                HAVING COUNT(DISTINCT "NIT VENDEDOR") >= 2
+                ORDER BY unique_sellers DESC, total_commission DESC
+                LIMIT 10
+            """
+
         with st.expander("🔍 Ver Consulta SQL", expanded=False):
             st.code(buyer_hub_query, language="sql")
-        
+
         buyer_hubs_df = safe_query(buyer_hub_query, "nodos compradores")
-        
+
         if not buyer_hubs_df.empty:
             st.markdown("**🏪 Principales Nodos de Compradores (Más Conectados)**")
-            
-            fig_buyer_hub = px.bar(
-                buyer_hubs_df,
-                x='unique_sellers',
-                y='buyer',
+
+            _bh_has_ref = 'nombre_ref' in buyer_hubs_df.columns
+            _bh_cd_cols = ['total_commission', 'ref_commission', 'net_commission', 'total_transactions']
+            if _bh_has_ref:
+                _bh_cd_cols.append('nombre_ref')
+            fig_buyer_hub = go.Figure()
+            fig_buyer_hub.add_trace(go.Bar(
+                x=buyer_hubs_df['unique_sellers'],
+                y=buyer_hubs_df['buyer'],
                 orientation='h',
+                marker=dict(color=buyer_hubs_df['total_commission'], colorscale='Greens', showscale=False),
+                customdata=buyer_hubs_df[_bh_cd_cols].values,
+                hovertemplate=(
+                    '<b>%{y}</b><br>Vendedores Únicos: %{x}<br>'
+                    'Comisión Total: $%{customdata[0]:,.0f}<br>'
+                    'Comisión Ref.: $%{customdata[1]:,.0f}<br>'
+                    'Comisión Empresa: $%{customdata[2]:,.0f}<br>'
+                    'Transacciones: %{customdata[3]:,.0f}<br>'
+                    + ('Referenciador: %{customdata[4]}<extra></extra>' if _bh_has_ref else '<extra></extra>')
+                ),
+            ))
+            fig_buyer_hub.update_layout(
                 title='Compradores con Más Vendedores Únicos',
-                labels={'unique_sellers': 'Número de Vendedores Únicos', 'buyer': 'Comprador'},
-                color='total_commission',
-                color_continuous_scale='Greens',
-                hover_data=['total_commission', 'total_transactions']
-            )
-            fig_buyer_hub.update_traces(
-                hovertemplate='<b>%{y}</b><br>Vendedores Únicos: %{x}<br>Comisión: $%{customdata[0]:,.0f}<br>Transacciones: %{customdata[1]:,.0f}<extra></extra>'
+                xaxis_title='Número de Vendedores Únicos', yaxis_title='Comprador',
+                height=400, margin=dict(l=20, r=20, t=50, b=20),
             )
             st.plotly_chart(fig_buyer_hub, width="stretch")
-            
-            st.dataframe(
-                buyer_hubs_df.style.format({
-                    'unique_sellers': '{:,.0f}',
-                    'total_commission': '${:,.0f}',
-                    'total_transactions': '{:,.0f}',
-                    'total_volume': '${:,.0f}'
-                }),
-                width="stretch"
-            )
+
+            bh_display = buyer_hubs_df.copy()
+            bh_display['unique_sellers']     = bh_display['unique_sellers'].apply(lambda v: f"{v:,.0f}")
+            bh_display['total_commission']   = bh_display['total_commission'].apply(lambda v: f"${v:,.0f}")
+            bh_display['ref_commission']     = bh_display['ref_commission'].apply(lambda v: f"${v:,.0f}")
+            bh_display['net_commission']     = bh_display['net_commission'].apply(lambda v: f"${v:,.0f}")
+            bh_display['total_transactions'] = bh_display['total_transactions'].apply(lambda v: f"{v:,.0f}")
+            bh_display['total_volume']       = bh_display['total_volume'].apply(lambda v: f"${v:,.0f}")
+            bh_cols = {
+                'buyer':            st.column_config.TextColumn('Comprador', help='Nombre del comprador en las operaciones de la BMC.'),
+                'unique_sellers':   st.column_config.TextColumn('Vendedores Únicos', help='Cuántos vendedores distintos ha tenido este comprador en el período.\nFórmula: COUNT(DISTINCT "NIT VENDEDOR")'),
+                'total_commission': st.column_config.TextColumn('Comisión Total', help='Suma bruta de comisiones generadas por operaciones de este comprador.\nFórmula: SUM(COMISION)'),
+                'ref_commission':   st.column_config.TextColumn('Comisión Ref.', help='Total pagado al referenciador por operaciones de este comprador.\nFórmula: SUM(COMISION × % REF VENTA/100) + SUM(COMISION × % REF COMPRA/100)'),
+                'net_commission':   st.column_config.TextColumn('Comisión Empresa', help='Lo que retiene su empresa después de pagar referenciadores.\nFórmula: Comisión Total − Comisión Referenciador'),
+                'total_transactions': st.column_config.TextColumn('Transacciones', help='Número total de operaciones en que este comprador participó.\nFórmula: COUNT(*)'),
+                'total_volume':     st.column_config.TextColumn('Volumen Total', help='Valor total de negocio en operaciones de este comprador.\nFórmula: SUM("VALOR NEGOCIO")'),
+            }
+            if _bh_has_ref:
+                bh_cols['nombre_ref'] = st.column_config.TextColumn('Referenciador', help='Referenciador más frecuente en las operaciones de este comprador (moda estadística).')
+            st.dataframe(bh_display, use_container_width=True, hide_index=True, column_config=bh_cols)
         else:
             st.info("No hay datos de nodos de compradores disponibles")
     
@@ -2100,15 +2539,22 @@ with tabs[2]:
         
         with col_prin2:
             st.markdown("**Desglose Detallado por Principal**")
+            prin_display = principal_df.copy()
+            prin_display['transactions']        = prin_display['transactions'].apply(lambda v: f"{v:,.0f}")
+            prin_display['total_commission']    = prin_display['total_commission'].apply(lambda v: f"${v:,.0f}")
+            prin_display['avg_commission']      = prin_display['avg_commission'].apply(lambda v: f"${v:,.0f}")
+            prin_display['total_volume']        = prin_display['total_volume'].apply(lambda v: f"${v:,.0f}")
+            prin_display['avg_commission_rate'] = prin_display['avg_commission_rate'].apply(lambda v: f"{v:.2f}%")
             st.dataframe(
-                principal_df.style.format({
-                    'transactions': '{:,.0f}',
-                    'total_commission': '${:,.0f}',
-                    'avg_commission': '${:,.0f}',
-                    'total_volume': '${:,.0f}',
-                    'avg_commission_rate': '{:.2f}%'
-                }),
-                width="stretch"
+                prin_display, use_container_width=True, hide_index=True,
+                column_config={
+                    'principal_type':       st.column_config.TextColumn('Principal', help='Quién paga el registro: Vendedor (PRINCIPAL=V) o Comprador (PRINCIPAL=C).'),
+                    'transactions':         st.column_config.TextColumn('Operaciones', help='Número de operaciones donde este tipo de principal pagó el registro.\nFórmula: COUNT(*)'),
+                    'total_commission':     st.column_config.TextColumn('Comisión Total', help='Suma de comisiones generadas por operaciones de este tipo de principal.\nFórmula: SUM(COMISION)'),
+                    'avg_commission':       st.column_config.TextColumn('Comisión Promedio', help='Comisión promedio por operación para este tipo de principal.\nFórmula: AVG(COMISION)'),
+                    'total_volume':         st.column_config.TextColumn('Volumen Total', help='Valor total de negocio operado donde este tipo de principal pagó.\nFórmula: SUM(VALOR NEGOCIO)'),
+                    'avg_commission_rate':  st.column_config.TextColumn('Tasa Comisión Prom.', help='Porcentaje promedio de comisión sobre el valor de negocio.\nFórmula: AVG(COMISION / VALOR NEGOCIO) × 100'),
+                },
             )
             
             if len(principal_df) >= 2:
@@ -2164,37 +2610,63 @@ with tabs[2]:
         
         seller_clients_where = filter_query + (" AND " if filter_query else "WHERE ") + "PRINCIPAL = 'V'"
         
-        potential_buyers_query = f"""
-            WITH our_seller_clients AS (
-                SELECT DISTINCT "NIT VENDEDOR" as client_nit
-                FROM operaciones_bmc
-                {seller_clients_where}
-            ),
-            buyer_opportunities AS (
-                SELECT 
-                    o."NIT COMPRADOR" as prospect_nit,
-                    o."NOMBRE COMPRADOR" as prospect_name,
-                    COUNT(DISTINCT o."NIT VENDEDOR") as num_connections_to_clients,
-                    SUM(o."VALOR NEGOCIO") as total_volume,
-                    COUNT(*) as total_transactions,
-                    AVG(o.COMISION / NULLIF(o."VALOR NEGOCIO", 0)) * 100 as avg_commission_rate
-                FROM operaciones_bmc o
-                INNER JOIN our_seller_clients osc ON o."NIT VENDEDOR" = osc.client_nit
-                WHERE o."NIT COMPRADOR" IS NOT NULL AND o."NOMBRE COMPRADOR" IS NOT NULL
-                GROUP BY o."NIT COMPRADOR", o."NOMBRE COMPRADOR"
-            )
-            SELECT 
-                prospect_nit,
-                prospect_name,
-                num_connections_to_clients,
-                total_volume,
-                total_transactions,
-                avg_commission_rate,
-                ROUND(total_volume * (avg_commission_rate / 100), 0) as commission_opportunity
-            FROM buyer_opportunities
-            ORDER BY num_connections_to_clients DESC, total_volume DESC
-            LIMIT 20
-        """
+        if _ref_lookup_exists:
+            potential_buyers_query = f"""
+                WITH our_seller_clients AS (
+                    SELECT DISTINCT "NIT VENDEDOR" as client_nit
+                    FROM operaciones_bmc
+                    {seller_clients_where}
+                ),
+                buyer_opportunities AS (
+                    SELECT
+                        o."NIT COMPRADOR" as prospect_nit,
+                        o."NOMBRE COMPRADOR" as prospect_name,
+                        COUNT(DISTINCT o."NIT VENDEDOR") as num_connections_to_clients,
+                        SUM(o."VALOR NEGOCIO") as total_volume,
+                        COUNT(*) as total_transactions,
+                        AVG(o.COMISION / NULLIF(o."VALOR NEGOCIO", 0)) * 100 as avg_commission_rate,
+                        mode(o.REFERENCIADOR) as main_ref
+                    FROM operaciones_bmc o
+                    INNER JOIN our_seller_clients osc ON o."NIT VENDEDOR" = osc.client_nit
+                    WHERE o."NIT COMPRADOR" IS NOT NULL AND o."NOMBRE COMPRADOR" IS NOT NULL
+                    GROUP BY o."NIT COMPRADOR", o."NOMBRE COMPRADOR"
+                )
+                SELECT bo.prospect_nit, bo.prospect_name, bo.num_connections_to_clients,
+                       bo.total_volume, bo.total_transactions, bo.avg_commission_rate,
+                       ROUND(bo.total_volume * (bo.avg_commission_rate / 100), 0) as commission_opportunity,
+                       COALESCE(r.NOMBRE, CAST(bo.main_ref AS VARCHAR)) AS nombre_ref
+                FROM buyer_opportunities bo
+                LEFT JOIN referenciadores r ON bo.main_ref = r.CODIGO
+                ORDER BY bo.num_connections_to_clients DESC, bo.total_volume DESC
+                LIMIT 20
+            """
+        else:
+            potential_buyers_query = f"""
+                WITH our_seller_clients AS (
+                    SELECT DISTINCT "NIT VENDEDOR" as client_nit
+                    FROM operaciones_bmc
+                    {seller_clients_where}
+                ),
+                buyer_opportunities AS (
+                    SELECT
+                        o."NIT COMPRADOR" as prospect_nit,
+                        o."NOMBRE COMPRADOR" as prospect_name,
+                        COUNT(DISTINCT o."NIT VENDEDOR") as num_connections_to_clients,
+                        SUM(o."VALOR NEGOCIO") as total_volume,
+                        COUNT(*) as total_transactions,
+                        AVG(o.COMISION / NULLIF(o."VALOR NEGOCIO", 0)) * 100 as avg_commission_rate
+                    FROM operaciones_bmc o
+                    INNER JOIN our_seller_clients osc ON o."NIT VENDEDOR" = osc.client_nit
+                    WHERE o."NIT COMPRADOR" IS NOT NULL AND o."NOMBRE COMPRADOR" IS NOT NULL
+                    GROUP BY o."NIT COMPRADOR", o."NOMBRE COMPRADOR"
+                )
+                SELECT prospect_nit, prospect_name, num_connections_to_clients,
+                       total_volume, total_transactions, avg_commission_rate,
+                       ROUND(total_volume * (avg_commission_rate / 100), 0) as commission_opportunity
+                FROM buyer_opportunities
+                ORDER BY num_connections_to_clients DESC, total_volume DESC
+                LIMIT 20
+            """
         
         potential_buyers_df = safe_query(potential_buyers_query, "compradores potenciales")
         
@@ -2203,37 +2675,63 @@ with tabs[2]:
         
         buyer_clients_where = filter_query + (" AND " if filter_query else "WHERE ") + "PRINCIPAL = 'C'"
         
-        potential_sellers_query = f"""
-            WITH our_buyer_clients AS (
-                SELECT DISTINCT "NIT COMPRADOR" as client_nit
-                FROM operaciones_bmc
-                {buyer_clients_where}
-            ),
-            seller_opportunities AS (
-                SELECT 
-                    o."NIT VENDEDOR" as prospect_nit,
-                    o."NOMBRE VENDEDOR" as prospect_name,
-                    COUNT(DISTINCT o."NIT COMPRADOR") as num_connections_to_clients,
-                    SUM(o."VALOR NEGOCIO") as total_volume,
-                    COUNT(*) as total_transactions,
-                    AVG(o.COMISION / NULLIF(o."VALOR NEGOCIO", 0)) * 100 as avg_commission_rate
-                FROM operaciones_bmc o
-                INNER JOIN our_buyer_clients obc ON o."NIT COMPRADOR" = obc.client_nit
-                WHERE o."NIT VENDEDOR" IS NOT NULL AND o."NOMBRE VENDEDOR" IS NOT NULL
-                GROUP BY o."NIT VENDEDOR", o."NOMBRE VENDEDOR"
-            )
-            SELECT 
-                prospect_nit,
-                prospect_name,
-                num_connections_to_clients,
-                total_volume,
-                total_transactions,
-                avg_commission_rate,
-                ROUND(total_volume * (avg_commission_rate / 100), 0) as commission_opportunity
-            FROM seller_opportunities
-            ORDER BY num_connections_to_clients DESC, total_volume DESC
-            LIMIT 20
-        """
+        if _ref_lookup_exists:
+            potential_sellers_query = f"""
+                WITH our_buyer_clients AS (
+                    SELECT DISTINCT "NIT COMPRADOR" as client_nit
+                    FROM operaciones_bmc
+                    {buyer_clients_where}
+                ),
+                seller_opportunities AS (
+                    SELECT
+                        o."NIT VENDEDOR" as prospect_nit,
+                        o."NOMBRE VENDEDOR" as prospect_name,
+                        COUNT(DISTINCT o."NIT COMPRADOR") as num_connections_to_clients,
+                        SUM(o."VALOR NEGOCIO") as total_volume,
+                        COUNT(*) as total_transactions,
+                        AVG(o.COMISION / NULLIF(o."VALOR NEGOCIO", 0)) * 100 as avg_commission_rate,
+                        mode(o.REFERENCIADOR) as main_ref
+                    FROM operaciones_bmc o
+                    INNER JOIN our_buyer_clients obc ON o."NIT COMPRADOR" = obc.client_nit
+                    WHERE o."NIT VENDEDOR" IS NOT NULL AND o."NOMBRE VENDEDOR" IS NOT NULL
+                    GROUP BY o."NIT VENDEDOR", o."NOMBRE VENDEDOR"
+                )
+                SELECT so.prospect_nit, so.prospect_name, so.num_connections_to_clients,
+                       so.total_volume, so.total_transactions, so.avg_commission_rate,
+                       ROUND(so.total_volume * (so.avg_commission_rate / 100), 0) as commission_opportunity,
+                       COALESCE(r.NOMBRE, CAST(so.main_ref AS VARCHAR)) AS nombre_ref
+                FROM seller_opportunities so
+                LEFT JOIN referenciadores r ON so.main_ref = r.CODIGO
+                ORDER BY so.num_connections_to_clients DESC, so.total_volume DESC
+                LIMIT 20
+            """
+        else:
+            potential_sellers_query = f"""
+                WITH our_buyer_clients AS (
+                    SELECT DISTINCT "NIT COMPRADOR" as client_nit
+                    FROM operaciones_bmc
+                    {buyer_clients_where}
+                ),
+                seller_opportunities AS (
+                    SELECT
+                        o."NIT VENDEDOR" as prospect_nit,
+                        o."NOMBRE VENDEDOR" as prospect_name,
+                        COUNT(DISTINCT o."NIT COMPRADOR") as num_connections_to_clients,
+                        SUM(o."VALOR NEGOCIO") as total_volume,
+                        COUNT(*) as total_transactions,
+                        AVG(o.COMISION / NULLIF(o."VALOR NEGOCIO", 0)) * 100 as avg_commission_rate
+                    FROM operaciones_bmc o
+                    INNER JOIN our_buyer_clients obc ON o."NIT COMPRADOR" = obc.client_nit
+                    WHERE o."NIT VENDEDOR" IS NOT NULL AND o."NOMBRE VENDEDOR" IS NOT NULL
+                    GROUP BY o."NIT VENDEDOR", o."NOMBRE VENDEDOR"
+                )
+                SELECT prospect_nit, prospect_name, num_connections_to_clients,
+                       total_volume, total_transactions, avg_commission_rate,
+                       ROUND(total_volume * (avg_commission_rate / 100), 0) as commission_opportunity
+                FROM seller_opportunities
+                ORDER BY num_connections_to_clients DESC, total_volume DESC
+                LIMIT 20
+            """
         
         potential_sellers_df = safe_query(potential_sellers_query, "vendedores potenciales")
         
@@ -2249,37 +2747,47 @@ with tabs[2]:
             
             if not potential_buyers_df.empty:
                 st.success(f"🎯 ¡Se encontraron {len(potential_buyers_df)} compradores potenciales como clientes!")
-                
+
                 total_opp = potential_buyers_df['commission_opportunity'].sum()
-                st.metric("💰 Oportunidad Total de Comisión", f"${total_opp:,.0f}", 
+                st.metric("💰 Oportunidad Total de Comisión", f"${total_opp:,.0f}",
                          help="Comisión potencial si todos estos compradores se convierten en clientes")
-                
-                display_buyers = potential_buyers_df[['prospect_name', 'num_connections_to_clients', 
-                                                       'total_volume', 'total_transactions', 
-                                                       'commission_opportunity']].copy()
-                display_buyers.columns = ['Nombre del Prospecto', 'Conexiones con Clientes', 'Volumen', 'Transacciones', 'Oportunidad de Comisión']
-                
-                st.dataframe(
-                    display_buyers.style.format({
-                        'Conexiones con Clientes': '{:.0f}',
-                        'Volumen': '${:,.0f}',
-                        'Transacciones': '{:.0f}',
-                        'Oportunidad de Comisión': '${:,.0f}'
-                    }),
-                    width="stretch",
-                    height=400
-                )
-                
+
+                _pb_has_ref = 'nombre_ref' in potential_buyers_df.columns
+                pb_cols = ['prospect_name', 'num_connections_to_clients', 'total_volume',
+                           'total_transactions', 'commission_opportunity']
+                if _pb_has_ref:
+                    pb_cols.insert(1, 'nombre_ref')
+                pb_display = potential_buyers_df[pb_cols].copy()
+                pb_display['num_connections_to_clients'] = pb_display['num_connections_to_clients'].apply(lambda v: f"{v:,.0f}")
+                pb_display['total_volume']               = pb_display['total_volume'].apply(lambda v: f"${v:,.0f}")
+                pb_display['total_transactions']         = pb_display['total_transactions'].apply(lambda v: f"{v:,.0f}")
+                pb_display['commission_opportunity']     = pb_display['commission_opportunity'].apply(lambda v: f"${v:,.0f}")
+                pb_col_config = {
+                    'prospect_name': st.column_config.TextColumn('Nombre del Prospecto', help='Comprador que ya ha transaccionado con sus clientes vendedores pero que aún no es cliente directo suyo.'),
+                    'num_connections_to_clients': st.column_config.TextColumn('Conexiones con Clientes', help='Cuántos de sus clientes vendedores ya han operado con este prospecto comprador.\nFórmula: COUNT(DISTINCT cliente_vendedor)'),
+                    'total_volume': st.column_config.TextColumn('Volumen', help='Valor total de negocio transaccionado por este prospecto con sus clientes.\nFórmula: SUM("VALOR NEGOCIO")'),
+                    'total_transactions': st.column_config.TextColumn('Transacciones', help='Número de operaciones en las que este prospecto participó como comprador junto a sus clientes.\nFórmula: COUNT(*)'),
+                    'commission_opportunity': st.column_config.TextColumn('Oportunidad de Comisión', help='Comisión potencial estimada si este prospecto se convierte en cliente directo, basada en el volumen histórico y tasa promedio del mercado.\nFórmula: Volumen × Tasa Promedio de Comisión del Mercado'),
+                }
+                if _pb_has_ref:
+                    pb_col_config['nombre_ref'] = st.column_config.TextColumn(
+                        'Referenciador',
+                        help='Referenciador cuyo cliente ya trabaja con este prospecto.',
+                    )
+                st.dataframe(pb_display, use_container_width=True, hide_index=True,
+                             height=400, column_config=pb_col_config)
+
                 if len(potential_buyers_df) > 0:
                     top_prospect = potential_buyers_df.iloc[0]
                     with st.expander(f"🌟 Mejor Prospecto: {top_prospect['prospect_name']}", expanded=False):
+                        ref_line = f"\n- Referenciador vinculado: **{top_prospect['nombre_ref']}**" if _pb_has_ref else ""
                         st.markdown(f"""
                         **Por qué es un prospecto caliente:**
                         - Trabaja con **{int(top_prospect['num_connections_to_clients'])}** de SUS clientes
                         - **${top_prospect['total_volume']:,.0f}** en volumen de transacciones
                         - **${top_prospect['commission_opportunity']:,.0f}** de oportunidad de comisión
-                        - **{int(top_prospect['total_transactions'])}** transacciones totales
-                        
+                        - **{int(top_prospect['total_transactions'])}** transacciones totales{ref_line}
+
                         **Acción:** ¡Contacte a sus clientes vendedores para que le presenten a este comprador!
                         """)
             else:
@@ -2291,37 +2799,47 @@ with tabs[2]:
             
             if not potential_sellers_df.empty:
                 st.success(f"🎯 ¡Se encontraron {len(potential_sellers_df)} vendedores potenciales como clientes!")
-                
+
                 total_opp = potential_sellers_df['commission_opportunity'].sum()
                 st.metric("💰 Oportunidad Total de Comisión", f"${total_opp:,.0f}",
                          help="Comisión potencial si todos estos vendedores se convierten en clientes")
-                
-                display_sellers = potential_sellers_df[['prospect_name', 'num_connections_to_clients', 
-                                                        'total_volume', 'total_transactions', 
-                                                        'commission_opportunity']].copy()
-                display_sellers.columns = ['Nombre del Prospecto', 'Conexiones con Clientes', 'Volumen', 'Transacciones', 'Oportunidad de Comisión']
-                
-                st.dataframe(
-                    display_sellers.style.format({
-                        'Conexiones con Clientes': '{:.0f}',
-                        'Volumen': '${:,.0f}',
-                        'Transacciones': '{:.0f}',
-                        'Oportunidad de Comisión': '${:,.0f}'
-                    }),
-                    width="stretch",
-                    height=400
-                )
-                
+
+                _ps_has_ref = 'nombre_ref' in potential_sellers_df.columns
+                ps_cols = ['prospect_name', 'num_connections_to_clients', 'total_volume',
+                           'total_transactions', 'commission_opportunity']
+                if _ps_has_ref:
+                    ps_cols.insert(1, 'nombre_ref')
+                ps_display = potential_sellers_df[ps_cols].copy()
+                ps_display['num_connections_to_clients'] = ps_display['num_connections_to_clients'].apply(lambda v: f"{v:,.0f}")
+                ps_display['total_volume']               = ps_display['total_volume'].apply(lambda v: f"${v:,.0f}")
+                ps_display['total_transactions']         = ps_display['total_transactions'].apply(lambda v: f"{v:,.0f}")
+                ps_display['commission_opportunity']     = ps_display['commission_opportunity'].apply(lambda v: f"${v:,.0f}")
+                ps_col_config = {
+                    'prospect_name': st.column_config.TextColumn('Nombre del Prospecto', help='Vendedor que ya ha transaccionado con sus clientes compradores pero que aún no es cliente directo suyo.'),
+                    'num_connections_to_clients': st.column_config.TextColumn('Conexiones con Clientes', help='Cuántos de sus clientes compradores ya han operado con este prospecto vendedor.\nFórmula: COUNT(DISTINCT cliente_comprador)'),
+                    'total_volume': st.column_config.TextColumn('Volumen', help='Valor total de negocio transaccionado por este prospecto con sus clientes.\nFórmula: SUM("VALOR NEGOCIO")'),
+                    'total_transactions': st.column_config.TextColumn('Transacciones', help='Número de operaciones en las que este prospecto participó como vendedor junto a sus clientes.\nFórmula: COUNT(*)'),
+                    'commission_opportunity': st.column_config.TextColumn('Oportunidad de Comisión', help='Comisión potencial estimada si este prospecto se convierte en cliente directo, basada en el volumen histórico y tasa promedio del mercado.\nFórmula: Volumen × Tasa Promedio de Comisión del Mercado'),
+                }
+                if _ps_has_ref:
+                    ps_col_config['nombre_ref'] = st.column_config.TextColumn(
+                        'Referenciador',
+                        help='Referenciador cuyo cliente ya trabaja con este prospecto.',
+                    )
+                st.dataframe(ps_display, use_container_width=True, hide_index=True,
+                             height=400, column_config=ps_col_config)
+
                 if len(potential_sellers_df) > 0:
                     top_prospect = potential_sellers_df.iloc[0]
                     with st.expander(f"🌟 Mejor Prospecto: {top_prospect['prospect_name']}", expanded=False):
+                        ref_line = f"\n- Referenciador vinculado: **{top_prospect['nombre_ref']}**" if _ps_has_ref else ""
                         st.markdown(f"""
                         **Por qué es un prospecto caliente:**
                         - Trabaja con **{int(top_prospect['num_connections_to_clients'])}** de SUS clientes
                         - **${top_prospect['total_volume']:,.0f}** en volumen de transacciones
                         - **${top_prospect['commission_opportunity']:,.0f}** de oportunidad de comisión
-                        - **{int(top_prospect['total_transactions'])}** transacciones totales
-                        
+                        - **{int(top_prospect['total_transactions'])}** transacciones totales{ref_line}
+
                         **Acción:** ¡Contacte a sus clientes compradores para que le presenten a este vendedor!
                         """)
             else:
@@ -2346,18 +2864,29 @@ with tabs[2]:
             combined_df = pd.concat(all_prospects, ignore_index=True)
             combined_df = combined_df.sort_values('num_connections_to_clients', ascending=False).head(10)
             
-            priority_display = combined_df[['prospect_name', 'type', 'num_connections_to_clients', 
-                                           'commission_opportunity', 'total_volume']].copy()
-            priority_display.columns = ['Prospecto', 'Tipo', 'Conexiones con Clientes', 'Oportunidad de Comisión', 'Volumen']
-            
-            st.dataframe(
-                priority_display.style.format({
-                    'Conexiones con Clientes': '{:.0f}',
-                    'Oportunidad de Comisión': '${:,.0f}',
-                    'Volumen': '${:,.0f}'
-                }),
-                width="stretch"
-            )
+            _comb_has_ref = 'nombre_ref' in combined_df.columns
+            comb_cols = ['prospect_name', 'type', 'num_connections_to_clients',
+                         'commission_opportunity', 'total_volume']
+            if _comb_has_ref:
+                comb_cols.insert(2, 'nombre_ref')
+            priority_display = combined_df[comb_cols].copy()
+            priority_display['num_connections_to_clients'] = priority_display['num_connections_to_clients'].apply(lambda v: f"{v:,.0f}")
+            priority_display['commission_opportunity']     = priority_display['commission_opportunity'].apply(lambda v: f"${v:,.0f}")
+            priority_display['total_volume']               = priority_display['total_volume'].apply(lambda v: f"${v:,.0f}")
+            comb_col_config = {
+                'prospect_name': st.column_config.TextColumn('Prospecto'),
+                'type': st.column_config.TextColumn('Tipo'),
+                'num_connections_to_clients': st.column_config.TextColumn('Conexiones con Clientes'),
+                'commission_opportunity': st.column_config.TextColumn('Oportunidad de Comisión'),
+                'total_volume': st.column_config.TextColumn('Volumen'),
+            }
+            if _comb_has_ref:
+                comb_col_config['nombre_ref'] = st.column_config.TextColumn(
+                    'Referenciador',
+                    help='Referenciador cuyo cliente ya trabaja con este prospecto.',
+                )
+            st.dataframe(priority_display, use_container_width=True, hide_index=True,
+                         column_config=comb_col_config)
             
             st.info(f"""
             💡 **Estrategia Comercial:**
@@ -2393,48 +2922,102 @@ with tabs[2]:
         """)
     
     relationships_where = filter_query + (" AND " if filter_query else "WHERE ") + '"NOMBRE VENDEDOR" IS NOT NULL AND "NOMBRE COMPRADOR" IS NOT NULL'
-    relationships_query = f"""
-        SELECT 
-            "NOMBRE VENDEDOR" as seller,
-            "NOMBRE COMPRADOR" as buyer,
-            COUNT(*) as transactions,
-            SUM(COMISION) as total_commission,
-            SUM("VALOR NEGOCIO") as total_volume,
-            COUNT(CASE WHEN PRINCIPAL = 'V' THEN 1 END) as seller_paid,
-            COUNT(CASE WHEN PRINCIPAL = 'C' THEN 1 END) as buyer_paid
-        FROM operaciones_bmc
-        {relationships_where}
-        GROUP BY "NOMBRE VENDEDOR", "NOMBRE COMPRADOR"
-        HAVING COUNT(*) >= 3
-        ORDER BY total_commission DESC
-        LIMIT 20
-    """
-    
+
+    if _ref_lookup_exists:
+        relationships_query = f"""
+            SELECT sub.seller, sub.buyer, sub.transactions, sub.total_commission,
+                   sub.ref_commission,
+                   sub.total_commission - sub.ref_commission AS net_commission,
+                   sub.total_volume, sub.seller_paid, sub.buyer_paid,
+                   COALESCE(r.NOMBRE, CAST(sub.main_ref AS VARCHAR)) AS nombre_ref
+            FROM (
+                SELECT "NOMBRE VENDEDOR" as seller,
+                       "NOMBRE COMPRADOR" as buyer,
+                       COUNT(*) as transactions,
+                       SUM(COMISION) as total_commission,
+                       SUM(COMISION * ("% REF VENTA" / 100.0))
+                           + SUM(COMISION * ("% REF COMPRA" / 100.0)) as ref_commission,
+                       SUM("VALOR NEGOCIO") as total_volume,
+                       COUNT(CASE WHEN PRINCIPAL = 'V' THEN 1 END) as seller_paid,
+                       COUNT(CASE WHEN PRINCIPAL = 'C' THEN 1 END) as buyer_paid,
+                       mode(REFERENCIADOR) as main_ref
+                FROM operaciones_bmc
+                {relationships_where}
+                GROUP BY "NOMBRE VENDEDOR", "NOMBRE COMPRADOR"
+                HAVING COUNT(*) >= 3
+                ORDER BY total_commission DESC
+                LIMIT 20
+            ) sub
+            LEFT JOIN referenciadores r ON sub.main_ref = r.CODIGO
+        """
+    else:
+        relationships_query = f"""
+            SELECT "NOMBRE VENDEDOR" as seller,
+                   "NOMBRE COMPRADOR" as buyer,
+                   COUNT(*) as transactions,
+                   SUM(COMISION) as total_commission,
+                   SUM(COMISION * ("% REF VENTA" / 100.0))
+                       + SUM(COMISION * ("% REF COMPRA" / 100.0)) as ref_commission,
+                   SUM(COMISION)
+                       - SUM(COMISION * ("% REF VENTA" / 100.0))
+                       - SUM(COMISION * ("% REF COMPRA" / 100.0)) as net_commission,
+                   SUM("VALOR NEGOCIO") as total_volume,
+                   COUNT(CASE WHEN PRINCIPAL = 'V' THEN 1 END) as seller_paid,
+                   COUNT(CASE WHEN PRINCIPAL = 'C' THEN 1 END) as buyer_paid
+            FROM operaciones_bmc
+            {relationships_where}
+            GROUP BY "NOMBRE VENDEDOR", "NOMBRE COMPRADOR"
+            HAVING COUNT(*) >= 3
+            ORDER BY total_commission DESC
+            LIMIT 20
+        """
+
     with st.expander("🔍 Ver Consulta SQL", expanded=False):
         st.code(relationships_query, language="sql")
-    
+
     relationships_df = safe_query(relationships_query, "relaciones mutuas")
-    
+
     if not relationships_df.empty:
         st.markdown("**Top 20 Relaciones Comprador-Vendedor**")
-        
+
         relationships_df['relationship_type'] = relationships_df.apply(
-            lambda row: '🔄 Mutua' if (row['seller_paid'] > 0 and row['buyer_paid'] > 0) 
+            lambda row: '🔄 Mutua' if (row['seller_paid'] > 0 and row['buyer_paid'] > 0)
             else ('🔴 Vendedor Paga' if row['seller_paid'] > 0 else '🔵 Comprador Paga'),
             axis=1
         )
-        
-        display_cols = ['seller', 'buyer', 'transactions', 'total_commission', 'relationship_type', 'seller_paid', 'buyer_paid']
-        st.dataframe(
-            relationships_df[display_cols].style.format({
-                'transactions': '{:,.0f}',
-                'total_commission': '${:,.0f}',
-                'seller_paid': '{:,.0f}',
-                'buyer_paid': '{:,.0f}'
-            }),
-            width="stretch",
-            height=600
-        )
+
+        _rel_has_ref = 'nombre_ref' in relationships_df.columns
+        rel_display = relationships_df.copy()
+        rel_display['transactions']     = rel_display['transactions'].apply(lambda v: f"{v:,.0f}")
+        rel_display['total_commission'] = rel_display['total_commission'].apply(lambda v: f"${v:,.0f}")
+        rel_display['ref_commission']   = rel_display['ref_commission'].apply(lambda v: f"${v:,.0f}")
+        rel_display['net_commission']   = rel_display['net_commission'].apply(lambda v: f"${v:,.0f}")
+        rel_display['seller_paid']      = rel_display['seller_paid'].apply(lambda v: f"{v:,.0f}")
+        rel_display['buyer_paid']       = rel_display['buyer_paid'].apply(lambda v: f"{v:,.0f}")
+
+        display_cols = ['seller', 'buyer', 'transactions', 'total_commission', 'ref_commission', 'net_commission', 'relationship_type', 'seller_paid', 'buyer_paid']
+        if _rel_has_ref:
+            display_cols.insert(2, 'nombre_ref')
+
+        rel_col_config = {
+            'seller':           st.column_config.TextColumn('Vendedor', help='Nombre del vendedor en esta relación comercial.'),
+            'buyer':            st.column_config.TextColumn('Comprador', help='Nombre del comprador en esta relación comercial.'),
+            'transactions':     st.column_config.TextColumn('Operaciones', help='Número de operaciones entre este vendedor y comprador.\nFórmula: COUNT(*)'),
+            'total_commission': st.column_config.TextColumn('Comisión Total', help='Suma bruta de comisiones de las operaciones entre este par.\nFórmula: SUM(COMISION)'),
+            'ref_commission':   st.column_config.TextColumn('Comisión Ref.', help='Total pagado al referenciador por operaciones entre este par.\nFórmula: SUM(COMISION × % REF VENTA/100) + SUM(COMISION × % REF COMPRA/100)'),
+            'net_commission':   st.column_config.TextColumn('Comisión Empresa', help='Lo que retiene su empresa por operaciones entre este par.\nFórmula: Comisión Total − Comisión Referenciador'),
+            'relationship_type': st.column_config.TextColumn('Tipo Relación', help='🔄 Mutua: ambos han pagado el registro en distintas operaciones.\n→ Unilateral: solo uno siempre paga el registro.'),
+            'seller_paid':      st.column_config.TextColumn('Vend. Paga', help='Número de operaciones donde el vendedor pagó el registro (PRINCIPAL=V).'),
+            'buyer_paid':       st.column_config.TextColumn('Comp. Paga', help='Número de operaciones donde el comprador pagó el registro (PRINCIPAL=C).'),
+        }
+        if _rel_has_ref:
+            rel_col_config['nombre_ref'] = st.column_config.TextColumn(
+                'Referenciador',
+                help='Referenciador más frecuente en las operaciones de esta relación comprador-vendedor.',
+            )
+
+        st.dataframe(rel_display[display_cols], use_container_width=True, hide_index=True,
+                     height=600, column_config=rel_col_config)
         
         mutual_count = len(relationships_df[relationships_df['relationship_type'] == '🔄 Mutua'])
         total_relationships = len(relationships_df)
@@ -2586,26 +3169,58 @@ with tabs[2]:
         
         max_commission = max(node_commission.values()) if node_commission else 1
         max_connections = max(node_connections.values()) if node_connections else 1
-        
+
+        # Build referenciador lookup for each node (seller/buyer name → ref name)
+        _hub_ref_lookup = {}
+        if _ref_lookup_exists:
+            _hub_ref_s_df = safe_query(f"""
+                SELECT sub."NOMBRE VENDEDOR" AS name,
+                       COALESCE(r.NOMBRE, CAST(sub.main_ref AS VARCHAR)) AS nombre_ref
+                FROM (
+                    SELECT "NOMBRE VENDEDOR", mode(REFERENCIADOR) AS main_ref
+                    FROM operaciones_bmc
+                    {network_data_where}
+                    GROUP BY "NOMBRE VENDEDOR"
+                ) sub
+                LEFT JOIN referenciadores r ON sub.main_ref = r.CODIGO
+            """, "ref vendedores red")
+            _hub_ref_b_df = safe_query(f"""
+                SELECT sub."NOMBRE COMPRADOR" AS name,
+                       COALESCE(r.NOMBRE, CAST(sub.main_ref AS VARCHAR)) AS nombre_ref
+                FROM (
+                    SELECT "NOMBRE COMPRADOR", mode(REFERENCIADOR) AS main_ref
+                    FROM operaciones_bmc
+                    {network_data_where}
+                    GROUP BY "NOMBRE COMPRADOR"
+                ) sub
+                LEFT JOIN referenciadores r ON sub.main_ref = r.CODIGO
+            """, "ref compradores red")
+            for _, _row in _hub_ref_s_df.iterrows():
+                _hub_ref_lookup[f"S:{_row['name']}"] = _row['nombre_ref']
+            for _, _row in _hub_ref_b_df.iterrows():
+                _hub_ref_lookup[f"B:{_row['name']}"] = _row['nombre_ref']
+
         for node in G.nodes():
             x, y = pos[node]
             node_x.append(x)
             node_y.append(y)
-            
+
             node_type = "Vendedor" if node.startswith("S:") else "Comprador"
             node_name = node[2:]
             commission = node_commission.get(node, 0)
             connections = node_connections.get(node, 0)
-            
+            ref_name = _hub_ref_lookup.get(node)
+
             short_name = node_name[:15] + "..." if len(node_name) > 15 else node_name
             node_text.append(short_name if show_labels else "")
-            
+
             node_hover_text.append(
                 f"<b>{node_name}</b><br>"
                 f"Tipo: {node_type}<br>"
                 f"Comisión: ${commission:,.0f}<br>"
                 f"Conexiones: {connections}<br>"
-                f"Haga clic para resaltar"
+                + (f"Referenciador: {ref_name}<br>" if ref_name else "")
+                + "Haga clic para resaltar"
             )
             
             node_color.append('#E74C3C' if node.startswith("S:") else '#3498DB')
@@ -2747,10 +3362,27 @@ with tabs[2]:
             node_name = node[2:]
             commission = node_commission.get(node, 0)
             connections = node_connections.get(node, 0)
-            hub_data.append({'Nombre': node_name, 'Tipo': node_type, 'Conexiones': connections, 'Comisión': commission})
-        
+            ref_name = _hub_ref_lookup.get(node, "")
+            row = {'Nombre': node_name, 'Tipo': node_type, 'Conexiones': connections, 'Comisión': commission}
+            if _ref_lookup_exists:
+                row['Referenciador'] = ref_name
+            hub_data.append(row)
+
         hub_df = pd.DataFrame(hub_data).sort_values('Conexiones', ascending=False).head(10)
-        st.dataframe(hub_df.style.format({'Conexiones': '{:.0f}', 'Comisión': '${:,.0f}'}), width="stretch")
+        hub_df['Conexiones'] = hub_df['Conexiones'].apply(lambda v: f"{v:,.0f}")
+        hub_df['Comisión']   = hub_df['Comisión'].apply(lambda v: f"${v:,.0f}")
+        hub_col_config = {
+            'Nombre': st.column_config.TextColumn('Nombre', help='Nombre del vendedor o comprador en la red.'),
+            'Tipo': st.column_config.TextColumn('Tipo', help='Vendedor o Comprador.'),
+            'Conexiones': st.column_config.TextColumn('Conexiones', help='Número de contrapartes únicas con las que este nodo opera.'),
+            'Comisión': st.column_config.TextColumn('Comisión', help='Total de comisiones generadas en operaciones que involucran este nodo.'),
+        }
+        if _ref_lookup_exists:
+            hub_col_config['Referenciador'] = st.column_config.TextColumn(
+                'Referenciador',
+                help='Referenciador más frecuente en las operaciones de este nodo.',
+            )
+        st.dataframe(hub_df, use_container_width=True, hide_index=True, column_config=hub_col_config)
         
     else:
         st.info("No hay suficientes datos de relaciones para crear la visualización de red. Se necesitan al menos 10 relaciones comprador-vendedor.")
@@ -2775,13 +3407,17 @@ with tabs[2]:
     if not network_metrics_df.empty:
         col_nm1, col_nm2, col_nm3, col_nm4 = st.columns(4)
         with col_nm1:
-            st.metric("Vendedores Únicos", f"{int(network_metrics_df['unique_sellers'][0]):,}")
+            st.metric("Vendedores Únicos", f"{int(network_metrics_df['unique_sellers'][0]):,}",
+                      help="Número de vendedores distintos que aparecen en las operaciones del período.\nFórmula: COUNT(DISTINCT NOMBRE VENDEDOR)")
         with col_nm2:
-            st.metric("Compradores Únicos", f"{int(network_metrics_df['unique_buyers'][0]):,}")
+            st.metric("Compradores Únicos", f"{int(network_metrics_df['unique_buyers'][0]):,}",
+                      help="Número de compradores distintos que aparecen en las operaciones del período.\nFórmula: COUNT(DISTINCT NOMBRE COMPRADOR)")
         with col_nm3:
-            st.metric("Relaciones Únicas", f"{int(network_metrics_df['unique_relationships'][0]):,}")
+            st.metric("Relaciones Únicas", f"{int(network_metrics_df['unique_relationships'][0]):,}",
+                      help="Pares comprador-vendedor únicos que han operado juntos al menos una vez.\nFórmula: COUNT(DISTINCT NOMBRE VENDEDOR || '-' || NOMBRE COMPRADOR)")
         with col_nm4:
-            st.metric("Prom Trans/Relación", f"{network_metrics_df['avg_transactions_per_relationship'][0]:.1f}")
+            st.metric("Prom Trans/Relación", f"{network_metrics_df['avg_transactions_per_relationship'][0]:.1f}",
+                      help="Promedio de transacciones por par comprador-vendedor. Valores altos indican relaciones comerciales recurrentes y estables.")
 
 # --- PESTAÑA 4: PERSPECTIVAS DEL CLIENTE ---
 with tabs[3]:
@@ -2827,12 +3463,32 @@ with tabs[3]:
         client_nit = _sql_str(str(_nit_rows.values[0]))
         
         st.markdown(f"## 📊 Perspectivas para: {selected_client}")
-        
+
+        if _ref_lookup_exists:
+            _client_ref_query = f"""
+                SELECT COALESCE(r.NOMBRE, CAST(sub.main_ref AS VARCHAR)) AS nombre_ref,
+                       CAST(sub.main_ref AS VARCHAR) AS codigo_ref
+                FROM (
+                    SELECT mode(REFERENCIADOR) AS main_ref
+                    FROM operaciones_bmc
+                    WHERE "CC PPAL" = '{client_nit}'
+                      AND REFERENCIADOR IS NOT NULL AND REFERENCIADOR != 0
+                ) sub
+                LEFT JOIN referenciadores r ON sub.main_ref = r.CODIGO
+            """
+            _client_ref_df = safe_query(_client_ref_query, "referenciador del cliente")
+            if not _client_ref_df.empty and _client_ref_df['nombre_ref'].notna().any():
+                _ref_name = _client_ref_df['nombre_ref'].values[0]
+                _ref_code = _client_ref_df['codigo_ref'].values[0]
+                st.info(f"👥 **Referenciador:** {_ref_name}  ·  Código: {_ref_code}")
+
         client_stats_query = f"""
-            SELECT 
+            SELECT
                 COUNT(*) as total_transactions,
                 SUM("VALOR NEGOCIO") as total_volume,
                 SUM(COMISION) as total_commission_paid,
+                SUM(COMISION * ("% REF VENTA" / 100.0))
+                    + SUM(COMISION * ("% REF COMPRA" / 100.0)) as ref_commission,
                 MIN("FECHA REGISTRO") as first_transaction,
                 MAX("FECHA REGISTRO") as last_transaction,
                 COUNT(DISTINCT CASE WHEN PRINCIPAL = 'V' THEN "NIT COMPRADOR" END) as unique_buyers,
@@ -2841,26 +3497,34 @@ with tabs[3]:
             FROM operaciones_bmc
             WHERE "CC PPAL" = '{client_nit}'
         """
-        
+
         with st.expander("🔍 Ver Consulta SQL de Estadísticas del Cliente", expanded=False):
             st.code(client_stats_query, language="sql")
             st.caption("Esta consulta recupera estadísticas completas para el cliente seleccionado")
-        
+
         client_stats_df = safe_query(client_stats_query, "estadísticas del cliente")
-        
+
         if not client_stats_df.empty:
             stats = client_stats_df.iloc[0]
-            
-            col_cs1, col_cs2, col_cs3, col_cs4 = st.columns(4)
-            
+            _cs_net = stats['total_commission_paid'] - stats['ref_commission']
+
+            col_cs1, col_cs2, col_cs3, col_cs4, col_cs5 = st.columns(5)
+
             with col_cs1:
-                st.metric("Total Transacciones", f"{int(stats['total_transactions']):,}")
+                st.metric("Total Transacciones", f"{int(stats['total_transactions']):,}",
+                          help="Número total de operaciones registradas para este cliente en todos los períodos.\nFórmula: COUNT(*)")
             with col_cs2:
-                st.metric("Volumen de Negocio", f"${stats['total_volume']:,.0f}")
+                st.metric("Comisión Total", f"${stats['total_commission_paid']:,.0f}",
+                          help="Suma bruta de todas las comisiones generadas por este cliente.\nFórmula: SUM(COMISION)")
             with col_cs3:
-                st.metric("Comisión Pagada", f"${stats['total_commission_paid']:,.0f}")
+                st.metric("Comisión Referenciador", f"${stats['ref_commission']:,.0f}",
+                          help="Lo que su empresa paga al referenciador por las operaciones de este cliente.\nFórmula: SUM(COMISION × % REF VENTA/100) + SUM(COMISION × % REF COMPRA/100)")
             with col_cs4:
-                st.metric("Tasa Promedio", f"{stats['avg_commission_rate']:.2f}%")
+                st.metric("Comisión Empresa", f"${_cs_net:,.0f}",
+                          help="Comisión neta que retiene su empresa después de pagar al referenciador.\nFórmula: Comisión Total − Comisión Referenciador")
+            with col_cs5:
+                st.metric("Tasa Promedio", f"{stats['avg_commission_rate']:.2f}%",
+                          help="Porcentaje promedio de comisión sobre el valor de negocio de este cliente.\nFórmula: AVG(COMISION / VALOR NEGOCIO) × 100")
             
             st.markdown("---")
             st.markdown("### 💎 Valor que USTED Aporta a Este Cliente")
@@ -2913,13 +3577,19 @@ with tabs[3]:
                         else '🟡 En el Mercado', axis=1
                     )
                     
+                    mc_display = market_comp_df[['NOMBRE PRODUCTO', 'client_transactions', 'client_rate', 'market_avg_rate', 'vs_market']].copy()
+                    mc_display['client_transactions'] = mc_display['client_transactions'].apply(lambda v: f"{v:.0f}")
+                    mc_display['client_rate']         = mc_display['client_rate'].apply(lambda v: f"{v:.2f}%")
+                    mc_display['market_avg_rate']     = mc_display['market_avg_rate'].apply(lambda v: f"{v:.2f}%")
                     st.dataframe(
-                        market_comp_df[['NOMBRE PRODUCTO', 'client_transactions', 'client_rate', 'market_avg_rate', 'vs_market']].style.format({
-                            'client_transactions': '{:.0f}',
-                            'client_rate': '{:.2f}%',
-                            'market_avg_rate': '{:.2f}%'
-                        }),
-                        width="stretch"
+                        mc_display, use_container_width=True, hide_index=True,
+                        column_config={
+                            'NOMBRE PRODUCTO':    st.column_config.TextColumn('Producto', help='Nombre del producto agrícola operado.'),
+                            'client_transactions': st.column_config.TextColumn('Operaciones del Cliente', help='Número de operaciones que este cliente realizó en este producto.\nFórmula: COUNT donde CC PPAL = cliente'),
+                            'client_rate':        st.column_config.TextColumn('Tasa del Cliente', help='Porcentaje de comisión promedio pagado por este cliente en este producto.\nFórmula: AVG(COMISION/VALOR NEGOCIO × 100) solo para este cliente'),
+                            'market_avg_rate':    st.column_config.TextColumn('Promedio Mercado', help='Tasa de comisión promedio del mercado para este producto (todos los clientes).\nFórmula: AVG(COMISION/VALOR NEGOCIO × 100) todos los clientes'),
+                            'vs_market':          st.column_config.TextColumn('vs. Mercado', help='Comparación de la tasa del cliente con el promedio del mercado. 🟢 Por debajo = paga menos que el mercado. 🔴 Por encima = paga más.'),
+                        },
                     )
                     
                     st.success("""
@@ -3027,15 +3697,20 @@ with tabs[3]:
                     top_buyers_df = safe_query(top_buyers_query, "principales compradores")
                     
                     if not top_buyers_df.empty:
-                        st.dataframe(
-                            top_buyers_df.style.format({'transactions': '{:.0f}', 'total_volume': '${:,.0f}'}),
-                            width="stretch"
-                        )
-                
+                        tb_display = top_buyers_df.copy()
+                        tb_display['transactions'] = tb_display['transactions'].apply(lambda v: f"{v:.0f}")
+                        tb_display['total_volume'] = tb_display['total_volume'].apply(lambda v: f"${v:,.0f}")
+                        st.dataframe(tb_display, use_container_width=True, hide_index=True, column_config={
+                            'partner':          st.column_config.TextColumn('Comprador', help='Nombre del comprador que adquirió productos de este cliente.'),
+                            'transactions':     st.column_config.TextColumn('Operaciones', help='Número de transacciones registradas con este comprador.\nFórmula: COUNT(*)'),
+                            'total_volume':     st.column_config.TextColumn('Volumen Total', help='Valor total de negocio operado con este comprador.\nFórmula: SUM(VALOR NEGOCIO)'),
+                            'last_transaction': st.column_config.TextColumn('Última Operación', help='Fecha de la operación más reciente con este comprador.'),
+                        })
+
                 if stats['unique_sellers'] > 0:
                     st.markdown("**🔴 Sus Principales Proveedores**")
                     top_sellers_query = f"""
-                        SELECT 
+                        SELECT
                             "NOMBRE VENDEDOR" as partner,
                             COUNT(*) as transactions,
                             SUM("VALOR NEGOCIO") as total_volume,
@@ -3046,18 +3721,23 @@ with tabs[3]:
                         ORDER BY total_volume DESC
                         LIMIT 10
                     """
-                    
+
                     with st.expander("🔍 Ver Consulta SQL de Principales Proveedores", expanded=False):
                         st.code(top_sellers_query, language="sql")
                         st.caption("Muestra los principales proveedores del cliente cuando actúa como comprador")
-                    
+
                     top_sellers_df = safe_query(top_sellers_query, "principales proveedores")
-                    
+
                     if not top_sellers_df.empty:
-                        st.dataframe(
-                            top_sellers_df.style.format({'transactions': '{:.0f}', 'total_volume': '${:,.0f}'}),
-                            width="stretch"
-                        )
+                        ts_display = top_sellers_df.copy()
+                        ts_display['transactions'] = ts_display['transactions'].apply(lambda v: f"{v:.0f}")
+                        ts_display['total_volume'] = ts_display['total_volume'].apply(lambda v: f"${v:,.0f}")
+                        st.dataframe(ts_display, use_container_width=True, hide_index=True, column_config={
+                            'partner':          st.column_config.TextColumn('Proveedor', help='Nombre del vendedor que suministró productos a este cliente.'),
+                            'transactions':     st.column_config.TextColumn('Operaciones', help='Número de transacciones registradas con este proveedor.\nFórmula: COUNT(*)'),
+                            'total_volume':     st.column_config.TextColumn('Volumen Total', help='Valor total de negocio operado con este proveedor.\nFórmula: SUM(VALOR NEGOCIO)'),
+                            'last_transaction': st.column_config.TextColumn('Última Operación', help='Fecha de la operación más reciente con este proveedor.'),
+                        })
                 
                 st.success("""
                 💡 **Valor Entregado:**
@@ -3098,29 +3778,38 @@ with tabs[3]:
                 
                 if not cost_breakdown_df.empty:
                     st.markdown("**📊 Análisis Anual de Costos**")
+                    cb_display = cost_breakdown_df.copy()
+                    cb_display['commission_paid'] = cb_display['commission_paid'].apply(lambda v: f"${v:,.0f}")
+                    cb_display['volume']          = cb_display['volume'].apply(lambda v: f"${v:,.0f}")
+                    cb_display['transactions']    = cb_display['transactions'].apply(lambda v: f"{v:.0f}")
+                    cb_display['effective_rate']  = cb_display['effective_rate'].apply(lambda v: f"{v:.2f}%")
                     st.dataframe(
-                        cost_breakdown_df.style.format({
-                            'commission_paid': '${:,.0f}',
-                            'volume': '${:,.0f}',
-                            'transactions': '{:.0f}',
-                            'effective_rate': '{:.2f}%'
-                        }),
-                        width="stretch"
+                        cb_display, use_container_width=True, hide_index=True,
+                        column_config={
+                            'YEAR':            st.column_config.TextColumn('Año', help='Año de las operaciones.'),
+                            'commission_paid': st.column_config.TextColumn('Comisión Pagada', help='Total de comisiones pagadas a su empresa por este cliente en el año.\nFórmula: SUM(COMISION)'),
+                            'volume':          st.column_config.TextColumn('Volumen Operado', help='Valor total de negocio registrado en el año.\nFórmula: SUM(VALOR NEGOCIO)'),
+                            'transactions':    st.column_config.TextColumn('Operaciones', help='Número de operaciones registradas en el año.\nFórmula: COUNT(*)'),
+                            'effective_rate':  st.column_config.TextColumn('Tasa Efectiva', help='Porcentaje promedio de comisión pagado sobre el valor de negocio en el año.\nFórmula: AVG(COMISION / VALOR NEGOCIO) × 100'),
+                        },
                     )
-                    
+
                     total_commission = cost_breakdown_df['commission_paid'].sum()
                     total_volume = cost_breakdown_df['volume'].sum()
                     estimated_tax_benefit = total_volume * 0.15
                     net_benefit = estimated_tax_benefit - total_commission
-                    
+
                     col_cb1, col_cb2, col_cb3 = st.columns(3)
                     with col_cb1:
-                        st.metric("Total Pagado", f"${total_commission:,.0f}")
+                        st.metric("Total Pagado", f"${total_commission:,.0f}",
+                                  help="Total de comisiones pagadas a su empresa por este cliente en todos los años.\nFórmula: SUM(COMISION)")
                     with col_cb2:
-                        st.metric("Beneficio Tributario Est.", f"${estimated_tax_benefit:,.0f}")
+                        st.metric("Beneficio Tributario Est.", f"${estimated_tax_benefit:,.0f}",
+                                  help="Estimación del beneficio tributario obtenido al registrar operaciones en BMC.\nFórmula: Volumen Total × 15% (tasa estimada de deducciones fiscales)")
                     with col_cb3:
-                        st.metric("Beneficio Neto", f"${net_benefit:,.0f}", 
-                                 delta=f"{((net_benefit/total_commission)*100):.0f}% ROI")
+                        st.metric("Beneficio Neto", f"${net_benefit:,.0f}",
+                                  delta=f"{((net_benefit/total_commission)*100):.0f}% ROI",
+                                  help="Diferencia entre el beneficio tributario estimado y las comisiones pagadas.\nFórmula: Beneficio Tributario − Total Pagado")
                     
                     st.success("""
                     💡 **Valor Entregado:**
@@ -3234,42 +3923,44 @@ with tabs[4]:
                 END AS day_of_week,
                 COUNT(*) as operations,
                 SUM(COMISION) as commission_earnings,
+                SUM(COMISION * ("% REF VENTA" / 100.0))
+                    + SUM(COMISION * ("% REF COMPRA" / 100.0)) as ref_commission,
+                SUM(COMISION)
+                    - SUM(COMISION * ("% REF VENTA" / 100.0))
+                    - SUM(COMISION * ("% REF COMPRA" / 100.0)) as net_commission,
                 AVG(COMISION) as avg_commission
             FROM operaciones_bmc
             {filter_query}
             GROUP BY day_of_week
         """
-        
+
         with st.expander("🔍 Ver Consulta SQL", expanded=False):
             st.code(dow_query, language="sql")
-        
+
         dow_df = safe_query(dow_query, "análisis por día de semana")
-        
+
         if not dow_df.empty:
             day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-            # Use a temporary sort key to order by day of week, then drop it
             dow_df['_sort_key'] = pd.Categorical(dow_df['day_of_week'].astype(str), categories=day_order, ordered=True)
             dow_df = dow_df.sort_values('_sort_key').drop(columns=['_sort_key'])
-            
             day_translation = {
                 'Monday': 'Lunes', 'Tuesday': 'Martes', 'Wednesday': 'Miércoles',
                 'Thursday': 'Jueves', 'Friday': 'Viernes', 'Saturday': 'Sábado', 'Sunday': 'Domingo'
             }
-            # Convert to plain string before mapping to avoid Categorical assignment error
             dow_df['day_of_week'] = dow_df['day_of_week'].astype(str).map(day_translation).fillna(dow_df['day_of_week'].astype(str))
-            
+
             fig_dow = px.bar(
-                dow_df,
-                x='day_of_week',
-                y='operations',
+                dow_df, x='day_of_week', y='operations',
                 title='Operaciones por Día de la Semana',
                 labels={'operations': 'Número de Operaciones', 'day_of_week': 'Día'},
-                color='operations',
-                color_continuous_scale='Viridis'
+                color='operations', color_continuous_scale='Viridis'
             )
             fig_dow.update_traces(
-                hovertemplate='<b>%{x}</b><br>Operaciones: %{y}<br>Comisión: $%{customdata[0]:,.0f}<extra></extra>',
-                customdata=dow_df[['commission_earnings']]
+                hovertemplate='<b>%{x}</b><br>Operaciones: %{y}<br>'
+                              'Comisión Total: $%{customdata[0]:,.0f}<br>'
+                              'Comisión Ref.: $%{customdata[1]:,.0f}<br>'
+                              'Comisión Empresa: $%{customdata[2]:,.0f}<extra></extra>',
+                customdata=dow_df[['commission_earnings', 'ref_commission', 'net_commission']]
             )
             st.plotly_chart(fig_dow, width="stretch")
             st.caption("💡 Optimice el personal según los días pico")
@@ -3300,33 +3991,38 @@ with tabs[4]:
             """)
         
         op_type_query = f"""
-            SELECT 
+            SELECT
                 "TIPO OPERACION",
                 COUNT(*) as operations,
                 SUM(COMISION) as commission_earnings,
+                SUM(COMISION * ("% REF VENTA" / 100.0))
+                    + SUM(COMISION * ("% REF COMPRA" / 100.0)) as ref_commission,
+                SUM(COMISION)
+                    - SUM(COMISION * ("% REF VENTA" / 100.0))
+                    - SUM(COMISION * ("% REF COMPRA" / 100.0)) as net_commission,
                 SUM("VALOR NEGOCIO") as volume
             FROM operaciones_bmc
             {filter_query}
             GROUP BY "TIPO OPERACION"
             ORDER BY operations DESC
         """
-        
+
         with st.expander("🔍 Ver Consulta SQL", expanded=False):
             st.code(op_type_query, language="sql")
-        
+
         op_type_df = safe_query(op_type_query, "análisis por tipo de operación")
-        
+
         if not op_type_df.empty:
             fig_op_type = px.pie(
-                op_type_df,
-                values='operations',
-                names='TIPO OPERACION',
-                title='Distribución por Tipo de Operación',
-                hole=0.3
+                op_type_df, values='operations', names='TIPO OPERACION',
+                title='Distribución por Tipo de Operación', hole=0.3
             )
             fig_op_type.update_traces(
-                hovertemplate='<b>%{label}</b><br>Operaciones: %{value}<br>Comisión: $%{customdata[0]:,.0f}<extra></extra>',
-                customdata=op_type_df[['commission_earnings']]
+                hovertemplate='<b>%{label}</b><br>Operaciones: %{value}<br>'
+                              'Comisión Total: $%{customdata[0]:,.0f}<br>'
+                              'Comisión Ref.: $%{customdata[1]:,.0f}<br>'
+                              'Comisión Empresa: $%{customdata[2]:,.0f}<extra></extra>',
+                customdata=op_type_df[['commission_earnings', 'ref_commission', 'net_commission']]
             )
             st.plotly_chart(fig_op_type, width="stretch")
         else:
@@ -3364,55 +4060,73 @@ with tabs[4]:
         st.markdown("**Principales Ciudades - Compradores**")
         buyer_cities_where = filter_query + (" AND " if filter_query else "WHERE ") + '"CIUDAD COMPRADOR" IS NOT NULL'
         buyer_cities_query = f"""
-            SELECT 
-                "CIUDAD COMPRADOR" as city,
-                COUNT(*) as operations,
-                SUM(COMISION) as commission_earnings
+            SELECT "CIUDAD COMPRADOR" as city,
+                   COUNT(*) as operations,
+                   SUM(COMISION) as commission_earnings,
+                   SUM(COMISION * ("% REF VENTA" / 100.0))
+                       + SUM(COMISION * ("% REF COMPRA" / 100.0)) as ref_commission,
+                   SUM(COMISION)
+                       - SUM(COMISION * ("% REF VENTA" / 100.0))
+                       - SUM(COMISION * ("% REF COMPRA" / 100.0)) as net_commission
             FROM operaciones_bmc
             {buyer_cities_where}
             GROUP BY city
             ORDER BY commission_earnings DESC
             LIMIT 10
         """
-        
         with st.expander("🔍 Ver Consulta SQL", expanded=False):
             st.code(buyer_cities_query, language="sql")
-        
         buyer_cities_df = safe_query(buyer_cities_query, "ciudades compradores")
-        
         if not buyer_cities_df.empty:
-            st.dataframe(
-                buyer_cities_df.style.format({'operations': '{:,.0f}', 'commission_earnings': '${:,.0f}'}),
-                width="stretch"
-            )
+            bc_display = buyer_cities_df.copy()
+            bc_display['operations']         = bc_display['operations'].apply(lambda v: f"{v:,.0f}")
+            bc_display['commission_earnings'] = bc_display['commission_earnings'].apply(lambda v: f"${v:,.0f}")
+            bc_display['ref_commission']      = bc_display['ref_commission'].apply(lambda v: f"${v:,.0f}")
+            bc_display['net_commission']      = bc_display['net_commission'].apply(lambda v: f"${v:,.0f}")
+            st.dataframe(bc_display, use_container_width=True, hide_index=True, column_config={
+                'city': st.column_config.TextColumn('Ciudad'),
+                'operations': st.column_config.TextColumn('Operaciones'),
+                'commission_earnings': st.column_config.TextColumn('Comisión Total'),
+                'ref_commission': st.column_config.TextColumn('Comisión Ref.'),
+                'net_commission': st.column_config.TextColumn('Comisión Empresa'),
+            })
         else:
             st.info("No hay datos de ciudades de compradores")
-    
+
     with col_geo2:
         st.markdown("**Principales Ciudades - Vendedores**")
         seller_cities_where = filter_query + (" AND " if filter_query else "WHERE ") + '"CIUDAD VENDEDOR" IS NOT NULL'
         seller_cities_query = f"""
-            SELECT 
-                "CIUDAD VENDEDOR" as city,
-                COUNT(*) as operations,
-                SUM(COMISION) as commission_earnings
+            SELECT "CIUDAD VENDEDOR" as city,
+                   COUNT(*) as operations,
+                   SUM(COMISION) as commission_earnings,
+                   SUM(COMISION * ("% REF VENTA" / 100.0))
+                       + SUM(COMISION * ("% REF COMPRA" / 100.0)) as ref_commission,
+                   SUM(COMISION)
+                       - SUM(COMISION * ("% REF VENTA" / 100.0))
+                       - SUM(COMISION * ("% REF COMPRA" / 100.0)) as net_commission
             FROM operaciones_bmc
             {seller_cities_where}
             GROUP BY city
             ORDER BY commission_earnings DESC
             LIMIT 10
         """
-        
         with st.expander("🔍 Ver Consulta SQL", expanded=False):
             st.code(seller_cities_query, language="sql")
-        
         seller_cities_df = safe_query(seller_cities_query, "ciudades vendedores")
-        
         if not seller_cities_df.empty:
-            st.dataframe(
-                seller_cities_df.style.format({'operations': '{:,.0f}', 'commission_earnings': '${:,.0f}'}),
-                width="stretch"
-            )
+            sc_display = seller_cities_df.copy()
+            sc_display['operations']         = sc_display['operations'].apply(lambda v: f"{v:,.0f}")
+            sc_display['commission_earnings'] = sc_display['commission_earnings'].apply(lambda v: f"${v:,.0f}")
+            sc_display['ref_commission']      = sc_display['ref_commission'].apply(lambda v: f"${v:,.0f}")
+            sc_display['net_commission']      = sc_display['net_commission'].apply(lambda v: f"${v:,.0f}")
+            st.dataframe(sc_display, use_container_width=True, hide_index=True, column_config={
+                'city': st.column_config.TextColumn('Ciudad'),
+                'operations': st.column_config.TextColumn('Operaciones'),
+                'commission_earnings': st.column_config.TextColumn('Comisión Total'),
+                'ref_commission': st.column_config.TextColumn('Comisión Ref.'),
+                'net_commission': st.column_config.TextColumn('Comisión Empresa'),
+            })
         else:
             st.info("No hay datos de ciudades de vendedores")
 
@@ -3449,11 +4163,15 @@ with tabs[5]:
             SELECT
                 sub.CLIENTE,
                 sub.commission_earnings,
+                sub.ref_commission,
+                sub.commission_earnings - sub.ref_commission AS net_commission,
                 COALESCE(r.NOMBRE, CAST(sub.main_referenciador AS VARCHAR)) AS nombre_ref
             FROM (
                 SELECT
                     CLIENTE,
                     SUM(COMISION) as commission_earnings,
+                    SUM(COMISION * ("% REF VENTA" / 100.0))
+                        + SUM(COMISION * ("% REF COMPRA" / 100.0)) as ref_commission,
                     mode(REFERENCIADOR) as main_referenciador
                 FROM operaciones_bmc
                 {filter_query}
@@ -3468,6 +4186,11 @@ with tabs[5]:
             SELECT
                 CLIENTE,
                 SUM(COMISION) as commission_earnings,
+                SUM(COMISION * ("% REF VENTA" / 100.0))
+                    + SUM(COMISION * ("% REF COMPRA" / 100.0)) as ref_commission,
+                SUM(COMISION)
+                    - SUM(COMISION * ("% REF VENTA" / 100.0))
+                    - SUM(COMISION * ("% REF COMPRA" / 100.0)) as net_commission,
                 NULL as nombre_ref
             FROM operaciones_bmc
             {filter_query}
@@ -3486,6 +4209,9 @@ with tabs[5]:
         pareto_df['cumulative_pct'] = (pareto_df['cumulative_commission'] / pareto_df['commission_earnings'].sum()) * 100
 
         _pareto_has_ref = 'nombre_ref' in pareto_df.columns and pareto_df['nombre_ref'].notna().any()
+        _pareto_cd_cols = ['ref_commission', 'net_commission']
+        if _pareto_has_ref:
+            _pareto_cd_cols.append('nombre_ref')
 
         fig_pareto = go.Figure()
         fig_pareto.add_trace(go.Bar(
@@ -3493,11 +4219,12 @@ with tabs[5]:
             y=pareto_df['commission_earnings'],
             name='Comisión',
             marker_color='lightblue',
-            customdata=pareto_df[['nombre_ref']] if _pareto_has_ref else None,
+            customdata=pareto_df[_pareto_cd_cols],
             hovertemplate=(
-                '<b>%{x}</b><br>Comisión: $%{y:,.0f}<br>Referenciador: %{customdata[0]}<extra></extra>'
-                if _pareto_has_ref else
-                '<b>%{x}</b><br>Comisión: $%{y:,.0f}<extra></extra>'
+                '<b>%{x}</b><br>Comisión Total: $%{y:,.0f}<br>'
+                'Comisión Ref.: $%{customdata[0]:,.0f}<br>'
+                'Comisión Empresa: $%{customdata[1]:,.0f}<br>'
+                + ('Referenciador: %{customdata[2]}<extra></extra>' if _pareto_has_ref else '<extra></extra>')
             )
         ))
         fig_pareto.add_trace(go.Scatter(
@@ -3508,11 +4235,10 @@ with tabs[5]:
             mode='lines+markers',
             marker=dict(color='red', size=6),
             line=dict(color='red', width=2),
-            customdata=pareto_df[['nombre_ref']] if _pareto_has_ref else None,
+            customdata=pareto_df[_pareto_cd_cols],
             hovertemplate=(
-                '<b>%{x}</b><br>Acumulado: %{y:.1f}%<br>Referenciador: %{customdata[0]}<extra></extra>'
-                if _pareto_has_ref else
-                '<b>%{x}</b><br>Acumulado: %{y:.1f}%<extra></extra>'
+                '<b>%{x}</b><br>Acumulado: %{y:.1f}%<br>'
+                + ('Referenciador: %{customdata[2]}<extra></extra>' if _pareto_has_ref else '<extra></extra>')
             )
         ))
         fig_pareto.update_layout(
@@ -3597,14 +4323,24 @@ with tabs[5]:
     anomaly_df = safe_query(anomaly_query, "anomalías de precios")
     
     if not anomaly_df.empty:
+        anomaly_display = anomaly_df.copy()
+        anomaly_display['transaction_value'] = anomaly_display['transaction_value'].apply(lambda x: f'${x:,.0f}')
+        anomaly_display['actual_rate'] = anomaly_display['actual_rate'].apply(lambda x: f'{x:.2f}%')
+        anomaly_display['market_avg_rate'] = anomaly_display['market_avg_rate'].apply(lambda x: f'{x:.2f}%')
+        anomaly_display['discount_pct'] = anomaly_display['discount_pct'].apply(lambda x: f'{x:.1f}%')
         st.dataframe(
-            anomaly_df.style.format({
-                'transaction_value': '${:,.0f}',
-                'actual_rate': '{:.2f}%',
-                'market_avg_rate': '{:.2f}%',
-                'discount_pct': '{:.1f}%'
-            }),
-            width="stretch"
+            anomaly_display,
+            width="stretch",
+            hide_index=True,
+            column_config={
+                'OPERACION': st.column_config.TextColumn('Operación', help='Identificador único de la operación en el sistema BMC.'),
+                'CLIENTE': st.column_config.TextColumn('Cliente', help='Nombre del cliente que realizó esta transacción.'),
+                'NOMBRE PRODUCTO': st.column_config.TextColumn('Producto', help='Producto agrícola negociado en esta operación.'),
+                'transaction_value': st.column_config.TextColumn('Valor Negocio', help='Valor total de la transacción.\nFórmula: SUM("VALOR NEGOCIO")'),
+                'actual_rate': st.column_config.TextColumn('Tasa Real', help='Tasa de comisión cobrada en esta operación específica.\nFórmula: (COMISION / VALOR NEGOCIO) × 100'),
+                'market_avg_rate': st.column_config.TextColumn('Tasa Promedio Mercado', help='Tasa promedio de comisión para este producto en todas las operaciones del período filtrado.\nFórmula: AVG(COMISION / VALOR NEGOCIO) × 100 — agrupado por producto'),
+                'discount_pct': st.column_config.TextColumn('Descuento %', help='Cuánto por debajo del promedio está la tasa real. Valores altos indican mayor descuento o posible error.\nFórmula: ((Tasa Promedio − Tasa Real) / Tasa Promedio) × 100'),
+            }
         )
         st.warning(f"⚠️ Se encontraron {len(anomaly_df)} transacciones con tasas de comisión inusualmente bajas")
         st.markdown("**Acción:** Revise estas transacciones para detectar errores de precios o acuerdos especiales")
@@ -3692,13 +4428,20 @@ with tabs[5]:
     with col_size2:
         if not size_df.empty:
             st.markdown("**Desglose por Tamaño de Transacciones**")
+            size_display = size_df.copy()
+            size_display['transaction_count'] = size_display['transaction_count'].apply(lambda x: f'{int(x):,}')
+            size_display['total_commission'] = size_display['total_commission'].apply(lambda x: f'${x:,.0f}')
+            size_display['avg_commission_rate'] = size_display['avg_commission_rate'].apply(lambda x: f'{x:.2f}%')
             st.dataframe(
-                size_df.style.format({
-                    'transaction_count': '{:,.0f}',
-                    'total_commission': '${:,.0f}',
-                    'avg_commission_rate': '{:.2f}%'
-                }),
-                width="stretch"
+                size_display,
+                width="stretch",
+                hide_index=True,
+                column_config={
+                    'size_category': st.column_config.TextColumn('Categoría', help='Rango de valor de la transacción:\n• Pequeña: < $1M\n• Mediana: $1M–$10M\n• Grande: $10M–$50M\n• Muy Grande: > $50M'),
+                    'transaction_count': st.column_config.TextColumn('Operaciones', help='Número de transacciones en este rango de tamaño.\nFórmula: COUNT(*)'),
+                    'total_commission': st.column_config.TextColumn('Comisión Total', help='Suma de comisiones brutas cobradas en transacciones de este tamaño.\nFórmula: SUM(COMISION)'),
+                    'avg_commission_rate': st.column_config.TextColumn('Tasa Prom. Comisión', help='Tasa de comisión promedio para transacciones de este tamaño.\nFórmula: AVG(COMISION / VALOR NEGOCIO) × 100'),
+                }
             )
             st.caption("💡 Las transacciones grandes pueden requerir manejo especial")
 
